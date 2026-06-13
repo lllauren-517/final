@@ -1,0 +1,2505 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SimTrade — 模擬投資沙盒</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root {
+  --bg:     #0a0c10;
+  --bg2:    #12151c;
+  --bg3:    #1a1f2b;
+  --bg4:    #222839;
+  --border: rgba(255,255,255,0.08);
+  --border2:rgba(255,255,255,0.14);
+  --text:   #e2e8f0;
+  --text2:  #8892a4;
+  --text3:  #4a5568;
+  --teal:   #2dd4bf;
+  --teal-bg:rgba(45,212,191,0.08);
+  --teal-bd:rgba(45,212,191,0.25);
+  --amber:  #fbbf24;
+  --amber-bg:rgba(251,191,36,0.08);
+  --amber-bd:rgba(251,191,36,0.25);
+  --red:    #f87171;
+  --red-bg: rgba(248,113,113,0.08);
+  --red-bd: rgba(248,113,113,0.25);
+  --green:  #34d399;
+  --green-bg:rgba(52,211,153,0.08);
+  --blue:   #60a5fa;
+  --blue-bg:rgba(96,165,250,0.08);
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'Noto Sans TC', sans-serif;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5}
+
+/* ── Layout ── */
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ── Header ── */
+#header{
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  padding:0 16px;
+  height:52px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+  position:relative;z-index:50;
+}
+#header h1{font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:.5px}
+#header h1 span{color:var(--teal)}
+.hdr-right{display:flex;align-items:center;gap:10px}
+#price-pill{
+  display:flex;align-items:center;gap:5px;
+  background:var(--bg3);border:1px solid var(--border2);
+  border-radius:20px;padding:4px 10px;
+  font-family:var(--mono);font-size:11px;color:var(--text3);
+}
+#price-dot{width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0}
+#price-dot.live{background:var(--green);animation:pulse 2s infinite}
+#price-dot.err{background:var(--red)}
+
+/* ── Tab Bar ── */
+#tabbar{
+  background:var(--bg2);
+  border-bottom:1px solid var(--border);
+  display:flex;
+  flex-shrink:0;
+}
+.tb{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:10px 4px 8px;gap:4px;
+  font-size:11px;color:var(--text3);cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:all .15s;
+}
+.tb .tb-icon{font-size:18px}
+.tb.active{color:var(--text);border-bottom-color:var(--blue)}
+.tb.active.t-trade{border-bottom-color:var(--teal)}
+.tb.active.t-risk{border-bottom-color:var(--amber)}
+.tb.active.t-history{border-bottom-color:var(--blue)}
+
+/* ── Content ── */
+#content{flex:1;overflow-y:auto;overscroll-behavior:contain}
+.panel{display:none;padding:16px;padding-bottom:24px}
+.panel.active{display:block}
+
+/* ── Cards ── */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:12px}
+.card-header{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:11px;font-weight:700;letter-spacing:.8px;color:var(--text2);text-transform:uppercase}
+.card-body{padding:14px}
+
+/* ── Metrics ── */
+.metric-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.metric{background:var(--bg3);border-radius:var(--radius-sm);padding:12px}
+.metric-label{font-size:11px;color:var(--text3);margin-bottom:2px}
+.metric-val{font-family:var(--mono);font-size:20px;font-weight:600}
+.metric-val.up{color:var(--green)}
+.metric-val.down{color:var(--red)}
+.metric-val.warn{color:var(--amber)}
+.metric-val.neutral{color:var(--text)}
+.metric-sub{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* ── Ticker list ── */
+.ticker-section-label{
+  font-size:10px;font-weight:700;letter-spacing:1px;
+  padding:8px 14px 6px;
+  color:var(--text3);text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+}
+.ticker-section-label.etf-lbl{color:var(--teal)}
+.ticker-section-label.stk-lbl{color:var(--amber)}
+.ticker-row{
+  display:flex;align-items:center;gap:10px;
+  padding:11px 14px;border-bottom:1px solid var(--border);
+  cursor:pointer;transition:background .1s;
+}
+.ticker-row:last-child{border-bottom:none}
+.ticker-row:active{background:var(--bg3)}
+.ticker-left{flex:1;min-width:0}
+.ticker-sym{font-family:var(--mono);font-size:13px;font-weight:600}
+.ticker-name{font-size:11px;color:var(--text2);margin-top:1px}
+.ticker-right{text-align:right}
+.ticker-price{font-family:var(--mono);font-size:15px;font-weight:600}
+.ticker-chg{font-family:var(--mono);font-size:11px;margin-top:1px}
+@keyframes flashUp{0%{background:rgba(52,211,153,.25)}100%{background:transparent}}
+@keyframes flashDown{0%{background:rgba(248,113,113,.25)}100%{background:transparent}}
+.flash-up{animation:flashUp .6s ease}
+.flash-down{animation:flashDown .6s ease}
+
+/* ── Forms ── */
+.form-row{margin-bottom:12px}
+.form-label{font-size:11px;font-weight:600;color:var(--text2);display:block;margin-bottom:6px;letter-spacing:.3px}
+.form-hint{font-size:11px;color:var(--text3);margin-top:4px}
+input,select{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);border-radius:var(--radius-sm);
+  padding:10px 12px;font-family:var(--sans);font-size:14px;
+  -webkit-appearance:none;appearance:none;outline:none;
+}
+input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(96,165,250,.12)}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238892a4' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+select option{background:var(--bg3)}
+input[readonly]{background:var(--bg4);color:var(--text2);cursor:default}
+
+/* ── Buttons ── */
+button{cursor:pointer;border:none;border-radius:var(--radius-sm);font-family:var(--sans);font-size:14px;font-weight:500;padding:10px 16px;transition:all .15s;-webkit-appearance:none}
+.btn{background:var(--bg3);border:1px solid var(--border2);color:var(--text)}
+.btn:active{opacity:.75}
+.btn-primary{background:var(--blue);color:#0a0c10}
+.btn-primary:active{opacity:.8}
+.btn-success{background:var(--green);color:#0a0c10}
+.btn-danger{background:var(--red);color:#0a0c10}
+.btn-warn{background:var(--amber);color:#0a0c10}
+.btn-full{width:100%;padding:13px}
+.btn-sm{padding:7px 12px;font-size:12px}
+.btn-row{display:flex;gap:8px}
+.btn-row button{flex:1}
+
+/* ── Direction toggle ── */
+.dir-toggle{display:flex;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:12px}
+.dir-btn{flex:1;padding:10px;text-align:center;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;color:var(--text3)}
+.dir-btn.active-buy{background:var(--green-bg);color:var(--green);border:1px solid rgba(52,211,153,.3)}
+.dir-btn.active-sell{background:var(--red-bg);color:var(--red);border:1px solid rgba(248,113,113,.3)}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;font-family:var(--mono)}
+.badge-etf{background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-bd)}
+.badge-stock{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
+.badge-pending{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(96,165,250,.25)}
+.badge-executed{background:var(--green-bg);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+.badge-rejected{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
+.badge-buy{background:var(--green-bg);color:var(--green);border:1px solid rgba(52,211,153,.25)}
+.badge-approved{background:rgba(167,139,250,.1);color:#a78bfa;border:1px solid rgba(167,139,250,.3)}
+.badge-awaiting{background:rgba(251,191,36,.1);color:var(--amber);border:1px solid var(--amber-bd)}
+/* ── Settlement rule banner ── */
+.rule-banner{
+  background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.2);
+  border-radius:var(--radius-sm);padding:10px 13px;margin-bottom:12px;
+  font-size:12px;color:var(--text2);line-height:1.7;
+}
+.rule-banner strong{color:var(--blue);display:block;margin-bottom:3px;font-size:13px}
+.rule-clock{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--bg3);border:1px solid var(--border2);
+  border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:12px;
+}
+.rule-clock .dot{width:7px;height:7px;border-radius:50%}
+.rule-clock.open-dot .dot{background:var(--green);animation:pulse 2s infinite}
+.rule-clock.close-dot .dot{background:var(--amber)}
+/* ── Settlement section in pending list ── */
+.violation-item{
+  padding:11px 14px;border-bottom:1px solid var(--border);
+}
+.violation-item:last-child{border-bottom:none}
+.violation-title{font-size:13px;font-weight:600;margin-bottom:3px}
+.violation-title.danger{color:var(--red)}
+.violation-title.warn{color:var(--amber)}
+.violation-desc{font-size:11px;color:var(--text2);margin-bottom:8px;line-height:1.6}
+.settle-section-hdr{
+  font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--text3);
+  text-transform:uppercase;padding:8px 14px 4px;
+}
+.badge-sell{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
+
+/* ── Order list ── */
+.order-item{padding:12px 14px;border-bottom:1px solid var(--border)}
+.order-item:last-child{border-bottom:none}
+.order-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.order-sym{font-family:var(--mono);font-size:14px;font-weight:600}
+.order-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.order-amount{font-family:var(--mono);font-size:13px;font-weight:600;text-align:right}
+
+/* ── Position item ── */
+.pos-item{padding:12px 14px;border-bottom:1px solid var(--border)}
+.pos-item:last-child{border-bottom:none}
+.pos-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.pos-sym{font-family:var(--mono);font-size:14px;font-weight:600}
+.pos-pnl{font-family:var(--mono);font-size:14px;font-weight:600;text-align:right}
+.pos-detail{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.pos-detail-item{font-size:11px;color:var(--text3)}
+.pos-detail-item span{color:var(--text2);font-family:var(--mono)}
+
+/* ── Risk bar ── */
+.risk-wrap{margin:10px 0}
+.risk-label-row{display:flex;justify-content:space-between;margin-bottom:5px;font-size:11px}
+.risk-bar-bg{background:var(--bg4);border-radius:4px;height:8px;overflow:hidden}
+.risk-bar-fill{height:100%;border-radius:4px;transition:width .4s}
+.risk-bar-fill.ok{background:var(--green)}
+.risk-bar-fill.warn{background:var(--amber)}
+.risk-bar-fill.danger{background:var(--red)}
+
+/* ── Freeze banner ── */
+.freeze-banner{
+  background:var(--red-bg);border:1px solid var(--red-bd);
+  border-radius:var(--radius-sm);padding:12px 14px;
+  display:flex;align-items:center;gap:10px;margin-bottom:12px;
+}
+.freeze-icon{font-size:20px;flex-shrink:0}
+.freeze-text strong{color:var(--red);font-size:13px;display:block}
+.freeze-text span{font-size:12px;color:var(--text2)}
+
+/* ── Scorecard modal ── */
+.modal-bg{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.75);z-index:200;
+  align-items:flex-end;justify-content:center;
+  padding:0;
+}
+.modal-bg.open{display:flex}
+.modal{
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:var(--radius) var(--radius) 0 0;
+  width:100%;max-height:92vh;
+  display:flex;flex-direction:column;
+  animation:slideUp .25s ease;
+}
+@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-handle{width:36px;height:4px;background:var(--bg4);border-radius:2px;margin:10px auto 0}
+.modal-header{padding:14px 16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:15px;font-weight:600}
+.modal-close{background:var(--bg3);border:1px solid var(--border2);color:var(--text2);width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;padding:0;cursor:pointer}
+.modal-body{padding:16px;overflow-y:auto;flex:1}
+.modal-footer{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2)}
+
+/* ── Scorecard questions ── */
+.sc-order-summary{background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px}
+.sc-sum-item .sc-sum-label{font-size:10px;color:var(--text3)}
+.sc-sum-item .sc-sum-val{font-family:var(--mono);font-size:13px;font-weight:600}
+.sc-question{margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.sc-question:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.sc-q-header{display:flex;gap:8px;margin-bottom:8px}
+.sc-q-num{width:22px;height:22px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;color:var(--text3);flex-shrink:0}
+.sc-q-text{font-size:13px;color:var(--text);line-height:1.45;padding-top:2px}
+.sc-input{margin-bottom:8px}
+.sc-scores{display:flex;gap:6px}
+.sc-dot{
+  flex:1;height:32px;border:1px solid var(--border2);border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:13px;color:var(--text3);cursor:pointer;
+  transition:all .15s;
+}
+.sc-dot.s1{background:rgba(248,113,113,.2);color:var(--red);border-color:var(--red-bd)}
+.sc-dot.s2{background:rgba(251,191,36,.15);color:var(--amber);border-color:var(--amber-bd)}
+.sc-dot.s3{background:var(--blue-bg);color:var(--blue);border-color:rgba(96,165,250,.3)}
+.sc-dot.s4{background:var(--green-bg);color:var(--green);border-color:rgba(52,211,153,.3)}
+.sc-dot.s5{background:var(--teal-bg);color:var(--teal);border-color:var(--teal-bd)}
+.sc-total-row{
+  background:var(--bg3);border-radius:var(--radius-sm);padding:12px;
+  display:flex;align-items:center;justify-content:space-between;margin-top:14px;
+}
+.sc-total-label{font-size:12px;color:var(--text2)}
+.sc-total-val{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--blue)}
+
+/* ── Review modal items ── */
+.review-sc-row{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.review-sc-row:last-child{border-bottom:none}
+.review-sc-q{flex:1;color:var(--text2)}
+.review-sc-reason{color:var(--text3);font-size:11px;margin-top:2px}
+
+/* ── Chart ── */
+.chart-wrap{position:relative;width:100%;height:200px;margin-top:4px}
+
+/* ── Toast ── */
+.toast-area{position:fixed;top:60px;left:50%;transform:translateX(-50%);width:calc(100% - 32px);max-width:400px;display:flex;flex-direction:column;gap:8px;z-index:300;pointer-events:none}
+.toast{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:11px 14px;font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:slideDown .2s ease;pointer-events:auto}
+.toast.success{border-left:3px solid var(--green)}
+.toast.danger{border-left:3px solid var(--red)}
+.toast.warn{border-left:3px solid var(--amber)}
+.toast.info{border-left:3px solid var(--blue)}
+@keyframes slideDown{from{transform:translateY(-10px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* ── Misc ── */
+.empty-state{padding:40px 20px;text-align:center;color:var(--text3);font-size:13px}
+.divider{border:none;border-top:1px solid var(--border);margin:12px 0}
+.section-title{font-size:11px;font-weight:700;letter-spacing:.8px;color:var(--text3);text-transform:uppercase;margin-bottom:10px}
+.group-toggle{display:flex;gap:8px;margin-bottom:14px}
+.group-btn{flex:1;padding:9px;text-align:center;font-size:12px;font-weight:700;border-radius:var(--radius-sm);cursor:pointer;transition:all .15s;border:1px solid var(--border2);color:var(--text3);background:var(--bg3)}
+.group-btn.etf-active{background:var(--teal-bg);color:var(--teal);border-color:var(--teal-bd)}
+.group-btn.stk-active{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-bd)}
+.tag{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.note-box{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;color:var(--text2);margin-bottom:12px}
+.note-box strong{color:var(--amber)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+
+/* ── Chart modal ── */
+.chart-modal-bg{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,.8);z-index:200;
+  align-items:flex-end;justify-content:center;
+}
+.chart-modal-bg.open{display:flex}
+.chart-modal{
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:var(--radius) var(--radius) 0 0;
+  width:100%;height:88vh;
+  display:flex;flex-direction:column;
+  animation:slideUp .25s ease;
+}
+.chart-modal-header{
+  padding:12px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+}
+.chart-sym-info{flex:1}
+.chart-sym-name{font-family:var(--mono);font-size:16px;font-weight:700}
+.chart-sym-sub{font-size:12px;color:var(--text2);margin-top:1px}
+.chart-price-info{text-align:right}
+.chart-cur-price{font-family:var(--mono);font-size:18px;font-weight:700}
+.chart-cur-chg{font-family:var(--mono);font-size:12px;margin-top:1px}
+.tf-bar{
+  display:flex;gap:4px;padding:10px 16px 8px;
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.tf-btn{
+  padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;
+  font-family:var(--mono);cursor:pointer;
+  background:var(--bg3);border:1px solid var(--border2);color:var(--text3);
+  transition:all .15s;
+}
+.tf-btn.active{background:var(--blue-bg);color:var(--blue);border-color:rgba(96,165,250,.4)}
+#chart-container{flex:1;min-height:0;position:relative}
+.chart-modal-footer{
+  padding:12px 16px;border-top:1px solid var(--border);flex-shrink:0;
+}
+/* ── Tax bar ── */
+.tax-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;
+}
+.tax-row:last-child{border-bottom:none}
+.tax-label{color:var(--text2)}
+.tax-val{font-family:var(--mono);font-weight:600}
+
+/* ── Report ── */
+.attr-bar{display:flex;height:22px;border-radius:6px;overflow:hidden;margin:8px 0}
+.attr-beta{background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:10px;color:#0a0c10;font-weight:700}
+.attr-alpha{background:var(--green);display:flex;align-items:center;justify-content:center;font-size:10px;color:#0a0c10;font-weight:700}
+.attr-noise{background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3);font-weight:700}
+
+/* ── Period card ── */
+.period-status{
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg3);border-radius:var(--radius-sm);
+  padding:10px 12px;margin-bottom:12px;
+}
+.period-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.period-dot.not-set{background:var(--text3)}
+.period-dot.active{background:var(--green);animation:pulse 2s infinite}
+.period-dot.ended{background:var(--amber)}
+.period-status-text{font-size:13px;flex:1}
+.period-status-text .sub{font-size:11px;color:var(--text3);margin-top:1px;font-family:var(--mono)}
+.period-countdown{font-family:var(--mono);font-size:13px;font-weight:600;text-align:right}
+
+/* Date inputs */
+input[type="date"]{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  color:var(--text);border-radius:var(--radius-sm);
+  padding:10px 12px;font-family:var(--sans);font-size:14px;
+  -webkit-appearance:none;appearance:none;outline:none;
+  color-scheme:dark;
+}
+input[type="date"]:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(96,165,250,.12)}
+
+/* Report modal */
+.report-section{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.report-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.report-section h3{font-size:12px;font-weight:700;letter-spacing:.8px;color:var(--text3);text-transform:uppercase;margin-bottom:12px}
+.rpt-metric-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.rpt-metric{background:var(--bg3);border-radius:var(--radius-sm);padding:10px 12px}
+.rpt-metric-label{font-size:11px;color:var(--text3);margin-bottom:2px}
+.rpt-metric-val{font-family:var(--mono);font-size:16px;font-weight:600}
+.rpt-trade-row{padding:10px 0;border-bottom:1px solid var(--border);font-size:12px}
+.rpt-trade-row:last-child{border-bottom:none}
+.rpt-trade-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.rpt-trade-sym{font-family:var(--mono);font-size:13px;font-weight:600}
+.rpt-trade-meta{color:var(--text3);font-size:11px}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header id="header">
+    <h1><span>Sim</span>Trade</h1>
+    <div class="hdr-right">
+      <div id="price-pill">
+        <div id="price-dot"></div>
+        <span id="price-txt">參考報價</span>
+      </div>
+      <div class="rule-clock" id="market-clock" style="font-size:11px">
+        <span class="dot"></span>
+        <span id="market-status-txt">—</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- TAB BAR -->
+  <nav id="tabbar">
+    <div class="tb t-trade active" onclick="switchTab('trade')">
+      <span class="tb-icon">📊</span>前台
+    </div>
+    <div class="tb t-risk" onclick="switchTab('risk')" style="position:relative">
+      <span id="viol-tab-dot" style="display:none;position:absolute;top:8px;right:18px;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
+      <span class="tb-icon">🛡️</span>中後台
+    </div>
+    <div class="tb t-history" onclick="switchTab('history')">
+      <span class="tb-icon">📋</span>記錄
+    </div>
+  </nav>
+
+  <!-- CONTENT -->
+  <div id="content">
+
+    <!-- ====== TRADE PANEL ====== -->
+    <div id="panel-trade" class="panel active">
+
+      <!-- Freeze banners -->
+      <div id="freeze-etf" class="freeze-banner" style="display:none">
+        <span class="freeze-icon">🔒</span>
+        <div class="freeze-text"><strong>ETF 組已凍結</strong><span>請前往中後台解除</span></div>
+      </div>
+      <div id="freeze-stock" class="freeze-banner" style="display:none">
+        <span class="freeze-icon">🔒</span>
+        <div class="freeze-text"><strong>個股組已凍結</strong><span>請前往中後台解除</span></div>
+      </div>
+
+      <!-- Group selector -->
+      <div class="group-toggle">
+        <div class="group-btn etf-active" id="grp-etf" onclick="setGroup('etf')">ETF 組</div>
+        <div class="group-btn" id="grp-stk" onclick="setGroup('stock')">個股組</div>
+      </div>
+
+      <!-- Quotes -->
+      <div class="card" id="quote-card">
+        <div class="card-header">
+          <span class="card-title">商品報價</span>
+          <span class="tag" id="quote-update-time">—</span>
+        </div>
+        <div id="ticker-list">
+          <div class="empty-state">載入中...</div>
+        </div>
+      </div>
+
+      <!-- NAV mini -->
+      <div class="metric-row">
+        <div class="metric">
+          <div class="metric-label" id="nav-label">ETF 組 NAV</div>
+          <div class="metric-val neutral" id="mini-nav">—</div>
+          <div class="metric-sub" id="mini-ret">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">現金剩餘</div>
+          <div class="metric-val neutral" id="mini-cash">—</div>
+          <div class="metric-sub">可用資金</div>
+        </div>
+      </div>
+
+      <!-- Positions -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">目前持倉</span>
+          <span class="tag" id="pos-count">0 筆</span>
+        </div>
+        <div id="positions-list">
+          <div class="empty-state">尚無持倉</div>
+        </div>
+      </div>
+
+      <!-- Order entry -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">下單</span></div>
+        <div class="card-body">
+          <!-- Direction toggle -->
+          <div class="dir-toggle">
+            <div class="dir-btn active-buy" id="dir-buy" onclick="setDir('buy')">▲ 買入</div>
+            <div class="dir-btn" id="dir-sell" onclick="setDir('sell')">▼ 賣出</div>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">選擇商品</label>
+            <select id="order-symbol" onchange="onSymbolChange()">
+              <option value="">— 請選擇 —</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label">數量（股 / 單位）</label>
+            <input type="number" id="order-qty" value="100" min="1" inputmode="numeric" oninput="onQtyChange()">
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+            <div>
+              <div class="form-label">參考報價</div>
+              <input type="text" id="order-price" readonly>
+            </div>
+            <div>
+              <div class="form-label">預估金額</div>
+              <input type="text" id="order-amount" readonly style="color:var(--teal);font-family:var(--mono)">
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-full" onclick="openScorecard()">填寫交易計畫書並送審 →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== RISK PANEL ====== -->
+    <div id="panel-risk" class="panel">
+
+      <!-- Violations Alert -->
+      <div class="card" id="violations-card" style="display:none;border-color:var(--red-bd)">
+        <div class="card-header" style="background:var(--red-bg)">
+          <span class="card-title" style="color:var(--red)">⚠ 風控違規警示</span>
+          <span class="badge badge-rejected" id="violations-count">0 項</span>
+        </div>
+        <div id="violations-list"></div>
+      </div>
+
+      <!-- ETF Group -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title" style="color:var(--teal)">ETF 組</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-success" id="unfreeze-etf" style="display:none" onclick="unfreezeGroup('etf')">解凍</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="risk-wrap">
+            <div class="risk-label-row">
+              <span style="color:var(--text2)">回撤使用率</span>
+              <span style="font-family:var(--mono);font-size:12px" id="etf-dd-label">0% / 10%</span>
+            </div>
+            <div class="risk-bar-bg"><div class="risk-bar-fill ok" id="etf-dd-bar" style="width:0%"></div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px">
+            <div class="metric" style="padding:10px">
+              <div class="metric-label">最大回撤</div>
+              <div class="metric-val neutral" style="font-size:16px" id="etf-dd-val">0.00%</div>
+            </div>
+            <div class="metric" style="padding:10px">
+              <div class="metric-label">資金使用</div>
+              <div class="metric-val neutral" style="font-size:16px" id="etf-util">0%</div>
+            </div>
+            <div class="metric" style="padding:10px">
+              <div class="metric-label">夏普值</div>
+              <div class="metric-val neutral" style="font-size:16px" id="etf-sharpe">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stock Group -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title" style="color:var(--amber)">個股組</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-success" id="unfreeze-stk" style="display:none" onclick="unfreezeGroup('stock')">解凍</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="risk-wrap">
+            <div class="risk-label-row">
+              <span style="color:var(--text2)">回撤使用率</span>
+              <span style="font-family:var(--mono);font-size:12px" id="stk-dd-label">0% / 10%</span>
+            </div>
+            <div class="risk-bar-bg"><div class="risk-bar-fill ok" id="stk-dd-bar" style="width:0%"></div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px">
+            <div class="metric" style="padding:10px">
+              <div class="metric-label">最大回撤</div>
+              <div class="metric-val neutral" style="font-size:16px" id="stk-dd-val">0.00%</div>
+            </div>
+            <div class="metric" style="padding:10px">
+              <div class="metric-label">資金使用</div>
+              <div class="metric-val neutral" style="font-size:16px" id="stk-util">0%</div>
+            </div>
+            <div class="metric" style="padding:10px">
+              <div class="metric-label">夏普值</div>
+              <div class="metric-val neutral" style="font-size:16px" id="stk-sharpe">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Close Positions (Middle Office) -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">持倉管理 — 中後台平倉</span>
+        </div>
+        <div class="card-body" style="padding:0 0 4px">
+          <div style="display:flex;border-bottom:1px solid var(--border)">
+            <div class="settle-section-hdr" style="padding:10px 14px 8px;flex:1;border-bottom:none">
+              ETF 組持倉
+            </div>
+          </div>
+          <div id="risk-pos-etf"><div class="empty-state" style="padding:16px">尚無持倉</div></div>
+
+          <div style="display:flex;border-bottom:1px solid var(--border);border-top:1px solid var(--border);margin-top:4px">
+            <div class="settle-section-hdr" style="padding:10px 14px 8px;flex:1;border-bottom:none">
+              個股組持倉
+            </div>
+          </div>
+          <div id="risk-pos-stock"><div class="empty-state" style="padding:16px">尚無持倉</div></div>
+        </div>
+      </div>
+
+      <!-- Pending approval -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">待審訂單</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="badge badge-pending" id="pending-badge">0 筆</span>
+            <button class="btn btn-sm btn-warn" id="settle-btn" onclick="settleApprovedOrders()" style="display:none">⏰ 執行收盤結算</button>
+          </div>
+        </div>
+        <div id="pending-list">
+          <div class="empty-state">目前無待審訂單</div>
+        </div>
+      </div>
+
+      <!-- Risk limits -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">風控上限設定</span></div>
+        <div class="card-body">
+          <div class="form-row">
+            <label class="form-label">ETF 組最大回撤上限 (%)</label>
+            <input type="number" id="etf-dd-limit" value="10" min="1" max="30" onchange="updateLimits()">
+          </div>
+          <div class="form-row" style="margin-bottom:0">
+            <label class="form-label">個股組最大回撤上限 (%)</label>
+            <input type="number" id="stk-dd-limit" value="10" min="1" max="30" onchange="updateLimits()">
+          </div>
+        </div>
+      </div>
+
+      <!-- NAV chart -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">NAV 走勢</span>
+          <button class="btn btn-sm btn-success" onclick="settleNAV()">結算紀錄</button>
+        </div>
+        <div class="card-body" style="padding:8px 14px 14px">
+          <div class="chart-wrap"><canvas id="nav-chart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Transaction Tax Summary -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">交易稅彙總</span></div>
+        <div class="card-body" style="padding:0 14px">
+          <div class="tax-row">
+            <span class="tax-label">ETF 組 — 已繳交易稅</span>
+            <span class="tax-val" id="tax-etf-amt">$0</span>
+          </div>
+          <div class="tax-row">
+            <span class="tax-label">ETF 稅率佔成交額</span>
+            <span class="tax-val" id="tax-etf-pct" style="color:var(--teal)">0.000%</span>
+          </div>
+          <div class="tax-row">
+            <span class="tax-label">個股組 — 已繳交易稅</span>
+            <span class="tax-val" id="tax-stk-amt">$0</span>
+          </div>
+          <div class="tax-row">
+            <span class="tax-label">個股稅率佔成交額</span>
+            <span class="tax-val" id="tax-stk-pct" style="color:var(--amber)">0.000%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== HISTORY PANEL ====== -->
+    <div id="panel-history" class="panel">
+
+      <!-- Trading Period -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📅 模擬交易期間</span>
+        </div>
+        <div class="card-body">
+          <div class="period-status">
+            <div class="period-dot not-set" id="period-dot"></div>
+            <div class="period-status-text">
+              <div id="period-status-label">尚未設定交易期間</div>
+              <div class="sub" id="period-status-sub">請選擇開始與結束日期</div>
+            </div>
+            <div class="period-countdown" id="period-countdown"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+            <div>
+              <label class="form-label">開始日期</label>
+              <input type="date" id="period-start" onchange="onPeriodChange()">
+            </div>
+            <div>
+              <label class="form-label">結束日期</label>
+              <input type="date" id="period-end" onchange="onPeriodChange()">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" style="flex:1" onclick="setPeriod()">設定期間</button>
+            <button class="btn" onclick="clearPeriod()">清除</button>
+          </div>
+          <div id="export-area" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="export-hint"></div>
+            <button class="btn btn-success btn-full" style="margin-bottom:8px" onclick="exportReport()">📄 匯出績效報告 CSV</button>
+            <button class="btn btn-danger btn-full" id="end-period-btn" style="display:none" onclick="endPeriodAndClear()">⏹ 結束期間並清除所有紀錄</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Group filter -->
+      <div class="group-toggle">
+        <div class="group-btn etf-active" id="hist-etf" onclick="setHistGroup('etf')">ETF 組</div>
+        <div class="group-btn" id="hist-stk" onclick="setHistGroup('stock')">個股組</div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="metric-row">
+        <div class="metric">
+          <div class="metric-label">累計報酬</div>
+          <div class="metric-val neutral" id="hist-ret">—</div>
+          <div class="metric-sub" id="hist-trades">0 筆成交</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">計分卡均分</div>
+          <div class="metric-val neutral" id="hist-avg-sc">—</div>
+          <div class="metric-sub">/ 25 滿分</div>
+        </div>
+      </div>
+
+      <!-- Order history -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">訂單記錄</span>
+          <button class="btn btn-sm btn-primary" onclick="exportReport()">📄 匯出 CSV</button>
+        </div>
+        <div id="order-history-list">
+          <div class="empty-state">尚無訂單</div>
+        </div>
+      </div>
+
+      <!-- Reset -->
+      <div class="card">
+        <div class="card-header"><span class="card-title" style="color:var(--red)">重置比賽</span></div>
+        <div class="card-body">
+          <p style="font-size:12px;color:var(--text2);margin-bottom:12px">將所有持倉、訂單與資金歸零，重新開始一場新的模擬賽。</p>
+          <button class="btn btn-danger btn-full" onclick="resetAll()">⚠ 全部重置</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== CHART MODAL ====== -->
+<div class="chart-modal-bg" id="modal-chart">
+  <div class="chart-modal">
+    <div class="modal-handle"></div>
+    <div class="chart-modal-header">
+      <div class="chart-sym-info">
+        <div class="chart-sym-name" id="chart-sym-name">—</div>
+        <div class="chart-sym-sub" id="chart-sym-sub">—</div>
+      </div>
+      <div class="chart-price-info">
+        <div class="chart-cur-price" id="chart-cur-price">—</div>
+        <div class="chart-cur-chg" id="chart-cur-chg">—</div>
+      </div>
+      <button class="modal-close" style="margin-left:12px" onclick="closeChartModal()">✕</button>
+    </div>
+    <div class="tf-bar">
+      <div class="tf-btn active" id="tf-1W" onclick="setTf('1W')">1W</div>
+      <div class="tf-btn" id="tf-1M" onclick="setTf('1M')">1M</div>
+      <div class="tf-btn" id="tf-3M" onclick="setTf('3M')">3M</div>
+      <div class="tf-btn" id="tf-6M" onclick="setTf('6M')">6M</div>
+      <div class="tf-btn" id="tf-1Y" onclick="setTf('1Y')">1Y</div>
+      <div class="tf-btn" id="tf-3Y" onclick="setTf('3Y')">3Y</div>
+    </div>
+    <div id="chart-container" style="position:relative">
+      <div id="chart-loading" style="display:none;position:absolute;inset:0;background:rgba(18,21,28,.85);z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px">
+        <div style="width:28px;height:28px;border:2px solid var(--border2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite"></div>
+        <div style="font-size:12px;color:var(--text2)">載入中...</div>
+      </div>
+    </div>
+    <div class="chart-modal-footer">
+      <div class="btn-row">
+        <button class="btn" onclick="closeChartModal()">關閉</button>
+        <button class="btn btn-primary" style="flex:2" onclick="selectFromChart()">選擇此商品下單 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== SCORECARD MODAL ====== -->
+<div class="modal-bg" id="modal-scorecard">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">交易計畫書</span>
+      <button class="modal-close" onclick="closeScorecard()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="sc-order-summary" id="sc-summary"></div>
+
+      <div class="sc-question">
+        <div class="sc-q-header">
+          <div class="sc-q-num">1</div>
+          <div class="sc-q-text">技術面訊號：均線、量價、型態支持此方向嗎？</div>
+        </div>
+        <div class="sc-input"><input type="text" id="sc1" placeholder="簡述技術面觀察..."></div>
+        <div class="sc-scores" id="scores-1"></div>
+      </div>
+
+      <div class="sc-question">
+        <div class="sc-q-header">
+          <div class="sc-q-num">2</div>
+          <div class="sc-q-text">基本面依據：財報、產業趨勢或總體經濟支持此操作嗎？</div>
+        </div>
+        <div class="sc-input"><input type="text" id="sc2" placeholder="簡述基本面觀察..."></div>
+        <div class="sc-scores" id="scores-2"></div>
+      </div>
+
+      <div class="sc-question">
+        <div class="sc-q-header">
+          <div class="sc-q-num">3</div>
+          <div class="sc-q-text">停損設定：預設何種條件觸發出場？</div>
+        </div>
+        <div class="sc-input"><input type="text" id="sc3" placeholder="例：跌破 -5% 時停損..."></div>
+        <div class="sc-scores" id="scores-3"></div>
+      </div>
+
+      <div class="sc-question">
+        <div class="sc-q-header">
+          <div class="sc-q-num">4</div>
+          <div class="sc-q-text">倉位合理性：此筆佔組合比例是否在風控上限內？</div>
+        </div>
+        <div class="sc-input"><input type="text" id="sc4" placeholder="例：佔總資產 15%，未超 30% 上限..."></div>
+        <div class="sc-scores" id="scores-4"></div>
+      </div>
+
+      <div class="sc-question">
+        <div class="sc-q-header">
+          <div class="sc-q-num">5</div>
+          <div class="sc-q-text">目標報酬：預計持倉多久？目標獲利幅度？</div>
+        </div>
+        <div class="sc-input"><input type="text" id="sc5" placeholder="例：持倉 2 週，目標 +8%..."></div>
+        <div class="sc-scores" id="scores-5"></div>
+      </div>
+
+      <div class="sc-total-row">
+        <div>
+          <div class="sc-total-label">計分卡總分</div>
+          <div id="sc-level-badge" class="badge badge-pending" style="margin-top:4px">尚未評分</div>
+        </div>
+        <div style="text-align:right">
+          <span class="sc-total-val" id="sc-total">0</span>
+          <span style="color:var(--text3);font-family:var(--mono);font-size:14px"> / 25</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="btn-row">
+        <button class="btn" onclick="closeScorecard()">取消</button>
+        <button class="btn btn-primary" style="flex:2" onclick="submitOrder()">送交風控審核 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== REVIEW MODAL ====== -->
+<div class="modal-bg" id="modal-review">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">審核訂單</span>
+      <button class="modal-close" onclick="closeReview()">✕</button>
+    </div>
+    <div class="modal-body" id="review-content"></div>
+    <div class="modal-footer">
+      <div class="form-row" style="margin-bottom:10px">
+        <input type="text" id="review-comment" placeholder="風控意見（可選填）">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-danger" onclick="rejectOrder()">駁回</button>
+        <button class="btn btn-success" style="flex:2" onclick="approveOrder()">核准並執行</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-area" id="toasts"></div>
+
+<script>
+// ========== SUPABASE ==========
+const supabaseUrl = 'https://gfreljxlgfrqsltswphj.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmcmVsanhsZ2ZycXNsdHN3cGhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5OTcwMjgsImV4cCI6MjA5NDU3MzAyOH0.IHSE6EuyNNeKVtbCTnB4Dtow_7eLS21elUVH4V0eug0';
+const db = supabase.createClient(supabaseUrl, supabaseKey);
+
+// ========== STATE ==========
+const INITIAL         = 200_000_000;  // 2億
+const RULES = {
+  MAX_SINGLE_COST:  40_000_000,   // 單一標的上限 4,000萬
+  MIN_HOLDINGS:     20_000_000,   // 最低持股成本 2,000萬
+  LOSS_WARN:        10_000_000,   // 累計虧損警戒線 1,000萬 → 停損出清+停止交易
+  LOSS_STOP:        20_000_000,   // 累計虧損停損線 2,000萬 → 須於下一交易日停損
+  POS_LOSS_PCT:     0.30,         // 單一標的未實現虧損 30% 須強制出清
+};
+const state = {
+  group: 'etf',           // current active group for trade tab
+  histGroup: 'etf',       // current active group for history tab
+  currentDir: 'buy',
+  securities: {},
+  orders: [],
+  pendingApproval: [],
+  approvedPending: [],
+  scores: {},
+  reviewId: null,
+  limits: { etf: 10, stk: 10 },
+  groups: {
+    etf:   mkGroup('ETF 組'),
+    stock: mkGroup('個股組'),
+  }
+};
+
+function mkGroup(name) {
+  return { name, cash: INITIAL, positions: [], navHistory: [{t: Date.now(), nav: INITIAL}], frozen: false, peakNAV: INITIAL, maxDD: 0, tradeCount: 0, returns: [], totalTax: 0, totalTurnover: 0 };
+}
+
+// ========== UTILS ==========
+const mono = n => n == null ? '—' : n.toLocaleString('zh-TW', {minimumFractionDigits:0, maximumFractionDigits:0});
+const money = n => n == null ? '—' : '$' + mono(Math.round(n));
+const pct = n => n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+const nowTime = () => new Date().toTimeString().slice(0,8);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+const qs = id => document.getElementById(id);
+const setText = (id, val, color) => { const el = qs(id); if(el){ el.textContent = val; if(color) el.style.color = color; } };
+
+function toast(msg, type='info') {
+  const area = qs('toasts');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`; t.textContent = msg;
+  area.appendChild(t);
+  setTimeout(() => t.style.opacity = '0', 3200);
+  setTimeout(() => t.remove(), 3700);
+}
+
+// ========== NAVIGATION ==========
+function switchTab(tab) {
+  ['trade','risk','history'].forEach(t => {
+    qs(`panel-${t}`).classList.toggle('active', t === tab);
+    document.querySelector(`.tb.t-${t}`).classList.toggle('active', t === tab);
+  });
+  if (tab === 'risk') setTimeout(renderNavChart, 100);
+  if (tab === 'history') renderHistory();
+}
+
+// ========== PRICE ==========
+async function fetchInitialPrices() {
+  const { data, error } = await db.from('securities').select('*');
+  if (error || !data) return;
+  data.forEach(item => {
+    state.securities[item.symbol] = {
+      name: item.name, price: +item.price, base: +item.base,
+      vol: +item.vol, type: item.type, grp: item.grp,
+    };
+  });
+  renderTickers(); updateOrderSymbols(); updateOrderPrice();
+}
+
+async function triggerPriceUpdate() {
+  const dot = qs('price-dot');
+  if(dot) dot.className = '';
+  try {
+    const { data, error } = await db.functions.invoke('bright-function');
+    if (error) throw error;
+    if(dot) dot.className = 'live';
+    setText('price-txt', `參考報價 · ${nowTime()}`);
+  } catch(e) {
+    if(dot) dot.className = 'err';
+    setText('price-txt', '報價暫時無法取得');
+  }
+}
+
+function setupRealtime() {
+  db.channel('sec-changes')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'securities' }, payload => {
+      const item = payload.new;
+      const s = state.securities[item.symbol];
+      if (!s) return;
+      const old = s.price;
+      s.price = +item.price;
+      s.change = s.price - s.base;
+      s.changeRate = s.base > 0 ? (s.change / s.base) * 100 : 0;
+      if(Math.abs(s.price - old) > 0.001) flashRow(item.symbol, s.price > old ? 'up' : 'down');
+      renderTickers(); updateOrderPrice(); updateAllMetrics();
+      setText('quote-update-time', nowTime());
+    }).subscribe();
+
+  db.channel('order-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
+      const o = payload.new;
+      if (payload.eventType === 'INSERT') {
+        if (state.orders.find(x => x.id === o.id)) return; // already loaded from DB
+        const order = {
+          id: o.id, time: o.time, symbol: o.symbol, name: o.name,
+          qty: +o.qty, side: o.side, price: +o.price, amount: +o.amount,
+          group: o.grp, status: o.status, comment: o.comment,
+          scorecard: o.scorecard,
+          settlement_date: o.settlement_date || null,
+          settlement_price: o.settlement_price ? +o.settlement_price : null
+        };
+        state.orders.push(order);
+        if (order.status === 'pending') {
+          state.pendingApproval.push(order);
+          toast(`新訂單進件：${order.symbol}`, 'info');
+        }
+      } else if (payload.eventType === 'UPDATE') {
+        const local = state.orders.find(x => x.id === o.id);
+        if (local) {
+          const prevStatus = local.status;
+          local.status = o.status;
+          local.comment = o.comment;
+          if (o.settlement_price) local.settlement_price = +o.settlement_price;
+          if (prevStatus === 'pending') {
+            state.pendingApproval = state.pendingApproval.filter(x => x.id !== o.id);
+            if (o.status === 'approved') {
+              state.approvedPending.push(local);
+              toast(`訂單核准，等待 ${local.settlement_date} 收盤結算：${local.symbol}`, 'success');
+            } else if (o.status === 'rejected') {
+              toast(`訂單遭駁回：${local.symbol}`, 'warn');
+            }
+          } else if (prevStatus === 'approved' && o.status === 'executed') {
+            state.approvedPending = state.approvedPending.filter(x => x.id !== o.id);
+            executeOrder(local);
+            toast(`收盤結算完成：${local.symbol} @ ${local.settlement_price}`, 'success');
+          }
+        }
+      }
+      updateAllMetrics();
+    }).subscribe();
+}
+
+function flashRow(symbol, dir) {
+  document.querySelectorAll('.ticker-row').forEach(row => {
+    if(row.dataset.symbol === symbol) {
+      row.classList.remove('flash-up','flash-down');
+      void row.offsetWidth;
+      row.classList.add(dir === 'up' ? 'flash-up' : 'flash-down');
+    }
+  });
+}
+
+// ========== RENDER TICKERS ==========
+function renderTickers() {
+  const grp = state.group;
+  let html = '';
+  for (const sym in state.securities) {
+    const s = state.securities[sym];
+    if (s.grp !== grp) continue;
+    const chgRate = s.changeRate ?? 0;
+    const clr = chgRate >= 0 ? 'var(--green)' : 'var(--red)';
+    const sign = chgRate >= 0 ? '▲' : '▼';
+    html += `<div class="ticker-row" data-symbol="${sym}" onclick="openChartModal('${sym}')">
+      <div class="ticker-left">
+        <div class="ticker-sym">${sym.replace('.TW','')}</div>
+        <div class="ticker-name">${s.name}</div>
+      </div>
+      <div class="ticker-right">
+        <div class="ticker-price" style="color:${clr}">${s.price.toFixed(s.price < 100 ? 2 : 0)}</div>
+        <div class="ticker-chg" style="color:${clr}">${sign} ${Math.abs(chgRate).toFixed(2)}%</div>
+      </div>
+      <div style="color:var(--text3);font-size:18px;padding-left:6px">›</div>
+    </div>`;
+  }
+  qs('ticker-list').innerHTML = html || '<div class="empty-state">無商品資料</div>';
+}
+
+// ========== ORDER UI ==========
+function setGroup(grp) {
+  state.group = grp;
+  qs('grp-etf').className = 'group-btn' + (grp === 'etf' ? ' etf-active' : '');
+  qs('grp-stk').className = 'group-btn' + (grp === 'stock' ? ' stk-active' : '');
+  updateOrderSymbols(); renderTickers(); updateNavMini(); renderPositions();
+}
+
+function setDir(dir) {
+  state.currentDir = dir;
+  qs('dir-buy').className = 'dir-btn' + (dir === 'buy' ? ' active-buy' : '');
+  qs('dir-sell').className = 'dir-btn' + (dir === 'sell' ? ' active-sell' : '');
+}
+
+function updateOrderSymbols() {
+  const sel = qs('order-symbol');
+  sel.innerHTML = '<option value="">— 請選擇商品 —</option>';
+  for (const sym in state.securities) {
+    if (state.securities[sym].grp === state.group)
+      sel.innerHTML += `<option value="${sym}">${sym.replace('.TW','')} — ${state.securities[sym].name}</option>`;
+  }
+  updateOrderPrice();
+}
+
+function pickSymbol(sym) {
+  const sel = qs('order-symbol');
+  if([...sel.options].some(o => o.value === sym)) { sel.value = sym; updateOrderPrice(); }
+  qs('order-symbol').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function onSymbolChange() { updateOrderPrice(); }
+function onQtyChange() { updateOrderPrice(); }
+
+function updateOrderPrice() {
+  const sym = qs('order-symbol').value;
+  const qty = parseInt(qs('order-qty').value) || 0;
+  if (!sym || !state.securities[sym]) {
+    qs('order-price').value = '—';
+    qs('order-amount').value = '—';
+    return;
+  }
+  const s = state.securities[sym];
+  qs('order-price').value = s.price.toFixed(s.price < 100 ? 2 : 0);
+  qs('order-amount').value = money(s.price * qty);
+}
+
+// ========== SETTLEMENT TIME HELPERS ==========
+function getTWNTime() {
+  const now = new Date();
+  // Convert to TWN (UTC+8)
+  return new Date(now.getTime() + (8 * 60 + now.getTimezoneOffset()) * 60000);
+}
+
+function checkAfterClose() {
+  const t = getTWNTime();
+  return t.getHours() > 13 || (t.getHours() === 13 && t.getMinutes() >= 30);
+}
+
+function nextTradingDay(baseDate) {
+  const d = new Date(baseDate);
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function getSettlementDate() {
+  const twn = getTWNTime();
+  if (checkAfterClose()) return nextTradingDay(twn);
+  // Also skip if today is weekend
+  const day = twn.getDay();
+  if (day === 0) return nextTradingDay(twn); // Sunday
+  if (day === 6) return nextTradingDay(twn); // Saturday
+  return twn.toISOString().slice(0, 10);
+}
+
+function updateMarketStatusBanner() {
+  const twn = getTWNTime();
+  const after = checkAfterClose();
+  const day = twn.getDay();
+  const isWeekend = day === 0 || day === 6;
+  const clockEl = qs('market-clock');
+  const txtEl   = qs('market-status-txt');
+  const sdEl    = qs('settlement-date-display'); // element removed from DOM, safely no-ops
+
+  if (clockEl) clockEl.className = 'rule-clock ' + ((!after && !isWeekend) ? 'open-dot' : 'close-dot');
+  if (txtEl)   txtEl.textContent = isWeekend ? '週末休市' : (after ? '已收盤 (13:30 後)' : '交易中 (13:30 前)');
+  if (sdEl)    sdEl.textContent = getSettlementDate(); // kept for potential future use
+}
+
+setInterval(updateMarketStatusBanner, 30000);
+
+async function settleApprovedOrders() {
+  const twn = getTWNTime();
+  const today = twn.toISOString().slice(0, 10);
+  const toSettle = state.approvedPending.filter(o => o.settlement_date <= today);
+
+  if (!toSettle.length) { toast('目前沒有可結算的訂單', 'info'); return; }
+  if (!checkAfterClose()) { toast('尚未到 13:30，請收盤後再執行結算', 'warn'); return; }
+
+  let settled = 0;
+  for (const o of toSettle) {
+    const s = state.securities[o.symbol];
+    if (!s) continue;
+    const settlPrice = parseFloat(s.price.toFixed(s.price < 100 ? 2 : 0));
+    const { error } = await db.from('orders').update({
+      status: 'executed',
+      settlement_price: settlPrice,
+      comment: `收盤結算 @ ${settlPrice}`
+    }).eq('id', o.id);
+    if (!error) {
+      o.settlement_price = settlPrice;
+      o.status = 'executed';
+      state.approvedPending = state.approvedPending.filter(x => x.id !== o.id);
+      executeOrder(o);
+      settled++;
+    }
+  }
+  toast(`已結算 ${settled} 筆訂單`, 'success');
+  updateAllMetrics();
+}
+
+async function cancelApproved(id) {
+  if (checkAfterClose()) { toast('收盤後不可取消已核准訂單', 'danger'); return; }
+  const { error } = await db.from('orders').update({ status: 'rejected', comment: '收盤前取消' }).eq('id', id);
+  if (!error) {
+    state.approvedPending = state.approvedPending.filter(x => x.id !== id);
+    const local = state.orders.find(x => x.id === id);
+    if (local) local.status = 'rejected';
+    toast('已取消訂單', 'info');
+    updateAllMetrics();
+  }
+}
+
+// ========== SCORECARD ==========
+function buildScoreDots() {
+  for (let q = 1; q <= 5; q++) {
+    const container = qs(`scores-${q}`);
+    container.innerHTML = '';
+    for (let v = 1; v <= 5; v++) {
+      const d = document.createElement('div');
+      d.className = 'sc-dot';
+      d.textContent = v;
+      d.onclick = () => setScore(q, v);
+      d.id = `sd-${q}-${v}`;
+      container.appendChild(d);
+    }
+  }
+}
+
+function setScore(q, v) {
+  state.scores[q] = v;
+  for (let i = 1; i <= 5; i++) {
+    const el = qs(`sd-${q}-${i}`);
+    if (!el) continue;
+    el.className = 'sc-dot' + (i === v ? ` s${v}` : '');
+  }
+  updateScTotal();
+}
+
+function updateScTotal() {
+  const total = Object.values(state.scores).reduce((a,b) => a+b, 0);
+  setText('sc-total', total);
+  const badge = qs('sc-level-badge');
+  if (total === 0) { badge.textContent = '尚未評分'; badge.className = 'badge badge-pending'; }
+  else if (total < 10) { badge.textContent = '高風險'; badge.className = 'badge badge-rejected'; }
+  else if (total < 16) { badge.textContent = '中等'; badge.className = 'badge badge-pending'; }
+  else if (total < 21) { badge.textContent = '良好'; badge.className = 'badge badge-executed'; }
+  else { badge.textContent = '優秀'; badge.className = 'badge badge-etf'; }
+}
+
+function openScorecard() {
+  const sym = qs('order-symbol').value;
+  const qty = parseInt(qs('order-qty').value) || 0;
+  if (!sym) { toast('請先選擇商品','warn'); return; }
+  if (!qty || qty < 1) { toast('請輸入有效數量','warn'); return; }
+  const earlyCheck = checkOrderConstraints(sym, qty, state.currentDir, state.group);
+  if (earlyCheck) { toast('⚠ 違反投資限制：' + earlyCheck, 'danger'); return; }
+  const s = state.securities[sym];
+  const dir = state.currentDir;
+  state.scores = {};
+  buildScoreDots();
+  qs('sc-summary').innerHTML = `
+    <div class="sc-sum-item"><div class="sc-sum-label">商品</div><div class="sc-sum-val">${sym.replace('.TW','')} ${s.name}</div></div>
+    <div class="sc-sum-item"><div class="sc-sum-label">方向</div><div class="sc-sum-val" style="color:${dir==='buy'?'var(--green)':'var(--red)'}">${dir==='buy'?'買入':'賣出'}</div></div>
+    <div class="sc-sum-item"><div class="sc-sum-label">數量</div><div class="sc-sum-val">${qty}</div></div>
+    <div class="sc-sum-item"><div class="sc-sum-label">預估金額</div><div class="sc-sum-val">${money(s.price*qty)}</div></div>
+    <div class="sc-sum-item"><div class="sc-sum-label">結算日</div><div class="sc-sum-val" style="color:var(--blue)">${getSettlementDate()}</div></div>
+  `;
+  updateScTotal();
+  [1,2,3,4,5].forEach(i => { const el = qs(`sc${i}`); if(el) el.value=''; });
+  qs('modal-scorecard').classList.add('open');
+}
+
+function closeScorecard() { qs('modal-scorecard').classList.remove('open'); }
+
+async function submitOrder() {
+  const grp = state.group;
+  const g = state.groups[grp];
+  const sym = qs('order-symbol').value;
+  const qty = parseInt(qs('order-qty').value) || 0;
+  const dir = state.currentDir;
+
+  if (g.frozen) { toast('此組別已凍結，無法下單','danger'); closeScorecard(); return; }
+  if (Object.keys(state.scores).length < 5) { toast('請完成所有 5 項評分','warn'); return; }
+
+  // ── Rule constraint check ──
+  const constraintErr = checkOrderConstraints(sym, qty, dir, grp);
+  if (constraintErr) {
+    toast('違反投資限制：' + constraintErr, 'danger');
+    return;
+  }
+
+  const s = state.securities[sym];
+  const total = Object.values(state.scores).reduce((a,b)=>a+b,0);
+  const reasons = {};
+  [1,2,3,4,5].forEach(i => { const el = qs(`sc${i}`); reasons[i] = el ? el.value : ''; });
+
+  const settlDate = getSettlementDate();
+  const isAfterClose = checkAfterClose();
+  const order = {
+    id: uid(), time: nowTime(), symbol: sym, name: s.name,
+    qty, side: dir, price: s.price, amount: s.price * qty,
+    grp, status: 'pending', comment: '',
+    settlement_date: settlDate,
+    settlement_price: null,
+    scorecard: { scores: { ...state.scores }, total, reasons }
+  };
+
+  closeScorecard();
+  const { error } = await db.from('orders').insert([order]);
+  if (error) toast('送單失敗：' + error.message, 'danger');
+  else toast(
+    isAfterClose
+      ? `訂單送出，將於 ${settlDate} 收盤結算`
+      : `訂單送出，將於今日 (${settlDate}) 收盤結算`,
+    'info'
+  );
+}
+
+// ========== REVIEW ==========
+function openReview(id) {
+  const o = state.orders.find(x => x.id === id);
+  if (!o) return;
+  state.reviewId = id;
+  const sc = o.scorecard;
+  const qLabels = ['技術面訊號','基本面依據','停損設定','倉位合理性','目標報酬'];
+  let html = `
+    <div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px">
+      <div class="sc-sum-item"><div class="sc-sum-label">商品</div><div class="sc-sum-val">${o.symbol.replace('.TW','')} ${o.name}</div></div>
+      <div class="sc-sum-item"><div class="sc-sum-label">方向</div><div class="sc-sum-val" style="color:${o.side==='buy'?'var(--green)':'var(--red)'}">${o.side==='buy'?'買入':'賣出'}</div></div>
+      <div class="sc-sum-item"><div class="sc-sum-label">數量</div><div class="sc-sum-val">${o.qty}</div></div>
+      <div class="sc-sum-item"><div class="sc-sum-label">金額</div><div class="sc-sum-val">${money(o.amount)}</div></div>
+    </div>
+    <div style="margin-bottom:12px">`;
+  for (let i = 1; i <= 5; i++) {
+    const v = sc.scores[i] || 0;
+    const clr = v >= 4 ? 'var(--green)' : v >= 3 ? 'var(--blue)' : v >= 2 ? 'var(--amber)' : 'var(--red)';
+    html += `<div class="review-sc-row">
+      <div class="sc-q-num">${i}</div>
+      <div style="flex:1">
+        <div class="review-sc-q">${qLabels[i-1]}</div>
+        <div class="review-sc-reason">${sc.reasons[i]||'（未填寫）'}</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:14px;font-weight:600;color:${clr}">${v}/5</div>
+    </div>`;
+  }
+  html += `</div>
+    <div style="background:var(--bg3);border-radius:8px;padding:12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="color:var(--text2);font-size:13px">計分卡總分</span>
+      <span style="font-family:var(--mono);font-size:22px;font-weight:700;color:${sc.total>=16?'var(--green)':sc.total>=10?'var(--blue)':'var(--red)'}">${sc.total} <span style="font-size:14px;color:var(--text3)">/ 25</span></span>
+    </div>`;
+  qs('review-content').innerHTML = html;
+  qs('review-comment').value = '';
+  qs('modal-review').classList.add('open');
+}
+
+function closeReview() { qs('modal-review').classList.remove('open'); }
+
+async function approveOrder() {
+  const id = state.reviewId;
+  const comment = qs('review-comment').value || '風控核准';
+  const { error } = await db.from('orders').update({ status: 'approved', comment }).eq('id', id);
+  if (!error) { closeReview(); toast('已核准，等待收盤結算', 'success'); }
+}
+
+async function rejectOrder() {
+  const id = state.reviewId;
+  const comment = qs('review-comment').value || '風控駁回';
+  const { error } = await db.from('orders').update({ status: 'rejected', comment }).eq('id', id);
+  if (!error) closeReview();
+}
+
+function executeOrder(order) {
+  const g = state.groups[order.group];
+  // Use settlement_price if available, otherwise use order.price
+  const execPrice = order.settlement_price || order.price;
+  order.price = execPrice; // store for position avg calc
+  const cost = execPrice * order.qty;
+  // Transaction tax: ETF 0.1%, Stock 0.3% (sell only, like Taiwan market)
+  const taxRate = state.securities[order.symbol]?.grp === 'etf' ? 0.001 : 0.003;
+  const tax = order.side === 'sell' ? Math.round(cost * taxRate) : 0;
+  if (order.side === 'buy') {
+    if (g.cash < cost) return;
+    g.cash -= cost;
+    const ex = g.positions.find(p => p.symbol === order.symbol);
+    if (ex) { ex.avgPrice = (ex.avgPrice * ex.qty + cost) / (ex.qty + order.qty); ex.qty += order.qty; }
+    else g.positions.push({ symbol: order.symbol, qty: order.qty, avgPrice: execPrice });
+  } else {
+    const pos = g.positions.find(p => p.symbol === order.symbol);
+    if (!pos || pos.qty < order.qty) return;
+    g.cash += (cost - tax);  // deduct tax from proceeds
+    pos.qty -= order.qty;
+    if (pos.qty === 0) g.positions = g.positions.filter(p => p.symbol !== order.symbol);
+    if (tax > 0) toast(`交易稅 $${tax.toLocaleString()} (${(taxRate*100).toFixed(1)}%) 已從收入扣除`, 'warn');
+  }
+  // Store tax on order for CSV export
+  order.tax = tax;
+  g.totalTax += tax;
+  if (order.side === 'sell') g.totalTurnover += cost;
+  g.tradeCount++;
+  const nav = calcNAV(order.group);
+  const prev = g.navHistory.length ? g.navHistory[g.navHistory.length-1].nav : INITIAL;
+  g.returns.push((nav - prev) / prev * 100);
+  g.navHistory.push({ t: Date.now(), nav });
+}
+
+// ========== RULE CONSTRAINTS ==========
+
+// Returns error string if order violates a rule, else null
+function checkOrderConstraints(sym, qty, side, grp) {
+  const g = state.groups[grp];
+  const s = state.securities[sym];
+  if (!s) return null;
+
+  const cumLoss = INITIAL - calcNAV(grp);
+
+  // 累計虧損 > 1,000萬 → 停止所有交易
+  if (cumLoss >= RULES.LOSS_WARN) {
+    return `累計虧損已達 ${money(cumLoss)}，超過 ${money(RULES.LOSS_WARN)} 警戒線，須停止交易並出清所有持股。`;
+  }
+
+  if (side === 'buy') {
+    // 單一標的成本上限 4,000萬
+    const existingPos  = g.positions.find(p => p.symbol === sym);
+    const existingCost = existingPos ? existingPos.avgPrice * existingPos.qty : 0;
+    const newCost      = s.price * qty;
+    if (existingCost + newCost > RULES.MAX_SINGLE_COST) {
+      return `單一標的總成本將達 ${money(existingCost + newCost)}，超過上限 ${money(RULES.MAX_SINGLE_COST)}（4,000萬）。`;
+    }
+  }
+
+  if (side === 'sell') {
+    // 賣出後持股成本不可低於 2,000萬（有持股時才檢查）
+    const totalCost = g.positions.reduce((sum, p) => sum + p.avgPrice * p.qty, 0);
+    const thisCost  = (() => {
+      const p = g.positions.find(x => x.symbol === sym);
+      return p ? p.avgPrice * Math.min(qty, p.qty) : 0;
+    })();
+    if (totalCost > 0 && (totalCost - thisCost) < RULES.MIN_HOLDINGS) {
+      return `賣出後持股總成本將低於最低限制 ${money(RULES.MIN_HOLDINGS)}（2,000萬），不可執行。`;
+    }
+  }
+
+  return null; // no violation
+}
+
+// Scan all positions & groups for violations, return list
+function getViolations() {
+  const violations = [];
+  for (const grp of ['etf','stock']) {
+    const g   = state.groups[grp];
+    const nav = calcNAV(grp);
+    const cumLoss = INITIAL - nav;
+
+    // 累計虧損 > 2,000萬
+    if (cumLoss >= RULES.LOSS_STOP) {
+      violations.push({
+        grp, sym: null, severity: 'danger',
+        type: 'loss_stop',
+        title: `${g.name}：累計虧損超過 2,000萬`,
+        desc: `累計虧損 ${money(cumLoss)}，須於下一個交易日停損。中後台應執行整組平倉。`,
+        action: `riskCloseGroup('${grp}')`,
+        actionLabel: '執行整組平倉'
+      });
+    }
+    // 累計虧損 > 1,000萬
+    else if (cumLoss >= RULES.LOSS_WARN) {
+      violations.push({
+        grp, sym: null, severity: 'danger',
+        type: 'loss_warn',
+        title: `${g.name}：累計虧損超過 1,000萬`,
+        desc: `累計虧損 ${money(cumLoss)}，須於下一個交易日出清所有持股並停止交易。`,
+        action: `riskCloseGroup('${grp}')`,
+        actionLabel: '出清所有持股'
+      });
+    }
+
+    // 單一標的持股成本超過 4,000萬
+    for (const pos of g.positions) {
+      const cost = pos.avgPrice * pos.qty;
+      if (cost > RULES.MAX_SINGLE_COST) {
+        violations.push({
+          grp, sym: pos.symbol, severity: 'danger',
+          type: 'max_cost',
+          title: `${g.name} / ${pos.symbol.replace('.TW','')}：單一標的成本超過 4,000萬`,
+          desc: `持股成本 ${money(cost)}，超過上限 ${money(RULES.MAX_SINGLE_COST)}，須減碼至限額以內。`,
+          action: `riskPartialClose('${grp}','${pos.symbol}',${pos.qty})`,
+          actionLabel: '部分平倉'
+        });
+      }
+
+      // 未實現虧損 > 30%
+      const s = state.securities[pos.symbol];
+      if (s) {
+        const unrealPct = (s.price - pos.avgPrice) / pos.avgPrice;
+        if (unrealPct < -RULES.POS_LOSS_PCT) {
+          violations.push({
+            grp, sym: pos.symbol, severity: 'warn',
+            type: 'pos_loss',
+            title: `${g.name} / ${pos.symbol.replace('.TW','')}：未實現虧損超過 30%`,
+            desc: `未實現虧損 ${(unrealPct*100).toFixed(1)}%（成本 ${money(pos.avgPrice*pos.qty)}），須於下一個交易日強制出清。`,
+            action: `riskCloseAll('${grp}','${pos.symbol}',${pos.qty})`,
+            actionLabel: '強制出清'
+          });
+        }
+      }
+    }
+
+    // 持股成本低於 2,000萬（有持倉才檢查）
+    if (g.positions.length > 0) {
+      const totalCost = g.positions.reduce((sum, p) => sum + p.avgPrice * p.qty, 0);
+      if (totalCost < RULES.MIN_HOLDINGS) {
+        violations.push({
+          grp, sym: null, severity: 'warn',
+          type: 'min_holdings',
+          title: `${g.name}：持股成本低於最低限制 2,000萬`,
+          desc: `目前持股成本合計 ${money(totalCost)}，低於最低限制 ${money(RULES.MIN_HOLDINGS)}，須增加持倉。`,
+          action: null, actionLabel: null
+        });
+      }
+    }
+  }
+  return violations;
+}
+
+function renderViolations() {
+  const violations = getViolations();
+  const card = qs('violations-card');
+  const list = qs('violations-list');
+  const badge = qs('violations-count');
+  if (!card || !list) return;
+
+  if (!violations.length) {
+    card.style.display = 'none';
+    const dot=qs('viol-tab-dot'); if(dot) dot.style.display='none';
+    return;
+  }
+  card.style.display = '';
+  badge.textContent = violations.length + ' 項';
+  const dot=qs('viol-tab-dot'); if(dot) dot.style.display='';
+
+  list.innerHTML = violations.map(v => `
+    <div class="violation-item">
+      <div class="violation-title ${v.severity}">${v.severity === 'danger' ? '🔴' : '🟡'} ${v.title}</div>
+      <div class="violation-desc">${v.desc}</div>
+      ${v.action ? `<button class="btn btn-sm ${v.severity==='danger'?'btn-danger':'btn-warn'}" onclick="${v.action}">${v.actionLabel}</button>` : ''}
+    </div>`).join('');
+}
+
+// ========== MIDDLE OFFICE POSITION MANAGEMENT ==========
+// ========== MIDDLE OFFICE POSITION MANAGEMENT ==========
+function renderRiskPositions() {
+  for (const grp of ['etf', 'stock']) {
+    const g = state.groups[grp];
+    const nav = calcNAV(grp);
+    const el = qs(`risk-pos-${grp}`);
+    if (!el) continue;
+
+    let html = '';
+    
+    // 判斷是否有持倉
+    if (!g.positions.length) {
+      html = '<div class="empty-state" style="padding:16px">尚無持倉</div>';
+    } else {
+      html = g.positions.map(p => {
+        const s = state.securities[p.symbol];
+        const cur = s ? s.price : p.avgPrice;
+        const pnl = (cur - p.avgPrice) * p.qty;
+        const pnlPct = (cur - p.avgPrice) / p.avgPrice * 100;
+        const mv = cur * p.qty;
+        const wt = nav > 0 ? (mv / nav * 100).toFixed(1) : 0;
+        const cl = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        return `<div class="order-item">
+          <div class="order-top" style="align-items:flex-start">
+            <div style="flex:1">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="order-sym">${p.symbol.replace('.TW','')}</span>
+                <span class="badge badge-${grp}">${grp === 'etf' ? 'ETF' : '個股'}</span>
+              </div>
+              <div class="order-meta">${p.qty} 股 · 均價 ${p.avgPrice.toFixed(p.avgPrice<100?2:0)} · 現價 ${cur.toFixed(cur<100?2:0)}</div>
+              <div class="order-meta">倉位 ${wt}% · <span style="color:${cl}">${pnl>=0?'+':''}${Math.round(pnl).toLocaleString()} (${pct(pnlPct)})</span></div>
+            </div>
+            <div style="text-align:right">
+              <div class="order-amount" style="color:${cl}">${money(mv)}</div>
+              <div style="display:flex;gap:5px;margin-top:6px">
+                <button class="btn btn-sm" onclick="riskPartialClose('${grp}','${p.symbol}',${p.qty})">部分</button>
+                <button class="btn btn-sm btn-danger" onclick="riskCloseAll('${grp}','${p.symbol}',${p.qty})">全倉</button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // 無論如何都在底部加上「整組全部平倉」按鈕
+    html += `
+      <div style="padding:10px 14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+        <button class="btn btn-sm btn-danger" onclick="riskCloseGroup('${grp}')">⚠ 整組全部平倉</button>
+      </div>`;
+
+    el.innerHTML = html;
+  }
+}
+// Partial close: show qty input modal
+function riskPartialClose(grp, sym, maxQty) {
+  const qty = parseInt(prompt(`${sym.replace('.TW','')} 持有 ${maxQty} 股，請輸入平倉數量：`, maxQty));
+  if (!qty || qty < 1 || qty > maxQty) { toast('數量無效', 'warn'); return; }
+  riskExecuteClose(grp, sym, qty, `中後台部分平倉 × ${qty}`);
+}
+
+async function riskCloseAll(grp, sym, qty) {
+  if (!confirm(`確定平倉 ${sym.replace('.TW','')} 全部 ${qty} 股？\n此操作由中後台直接執行，不經前台審核。`)) return;
+  await riskExecuteClose(grp, sym, qty, '中後台全部平倉');
+}
+
+async function riskCloseGroup(grp) {
+  const g = state.groups[grp];
+  if (!g.positions.length) { toast('此組別無持倉', 'info'); return; }
+  if (!confirm(`確定將 ${g.name} 所有持倉全部平倉？\n此操作不可復原。`)) return;
+  for (const p of [...g.positions]) {
+    await riskExecuteClose(grp, p.symbol, p.qty, '中後台整組平倉', true);
+  }
+  toast(`${g.name} 整組平倉完成`, 'warn');
+  updateAllMetrics();
+}
+
+async function riskExecuteClose(grp, sym, qty, comment, silent = false) {
+  const s = state.securities[sym];
+  if (!s) return;
+  const settlDate = getSettlementDate();
+  const order = {
+    id: uid(), time: nowTime(), symbol: sym, name: s.name,
+    qty, side: 'sell', price: s.price, amount: s.price * qty,
+    grp, status: 'approved', comment,
+    settlement_date: settlDate,
+    settlement_price: null,
+    scorecard: {
+      scores: {1:3,2:3,3:5,4:5,5:3}, total: 19,
+      reasons: {1:'中後台平倉',2:'中後台平倉',3:'風控指令',4:'清空倉位',5:'執行平倉'}
+    }
+  };
+  const { error } = await db.from('orders').insert([order]);
+  if (error) { toast('平倉送單失敗：' + error.message, 'danger'); return; }
+
+  // Add directly to approvedPending (bypass front office review)
+  state.orders.push(order);
+  state.approvedPending.push(order);
+  if (!silent) toast(`平倉指令已送出，結算日：${settlDate}`, 'warn');
+}
+
+// ========== CLOSE POSITION HELPERS ==========
+function prefillClose(sym, maxQty) {
+  // Switch to sell direction and pre-fill the order form
+  const s = state.securities[sym];
+  if (!s) return;
+  if (s.grp !== state.group) setGroup(s.grp);
+  setTimeout(() => {
+    setDir('sell');
+    const sel = qs('order-symbol');
+    if (sel && [...sel.options].some(o => o.value === sym)) {
+      sel.value = sym;
+    }
+    const qtyEl = qs('order-qty');
+    if (qtyEl) qtyEl.value = maxQty;
+    updateOrderPrice();
+    qs('order-symbol').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 50);
+}
+
+async function fullClose(sym, qty) {
+  const grp = state.group;
+  const g = state.groups[grp];
+  if (g.frozen) { toast('此組別已凍結，無法下單', 'danger'); return; }
+  const s = state.securities[sym];
+  if (!s) return;
+  if (!confirm(`確定全部平倉 ${sym.replace('.TW','')} × ${qty} 股？\n將以 ${getSettlementDate()} 收盤價結算。`)) return;
+
+  const settlDate = getSettlementDate();
+  const order = {
+    id: uid(), time: nowTime(), symbol: sym, name: s.name,
+    qty, side: 'sell', price: s.price, amount: s.price * qty,
+    grp, status: 'pending', comment: '全部平倉',
+    settlement_date: settlDate,
+    settlement_price: null,
+    scorecard: {
+      scores: {1:3,2:3,3:5,4:5,5:3},
+      total: 19,
+      reasons: {1:'平倉指令',2:'平倉指令',3:'平倉停利停損',4:'清空倉位',5:'執行平倉'}
+    }
+  };
+  const { error } = await db.from('orders').insert([order]);
+  if (error) toast('平倉送單失敗：' + error.message, 'danger');
+  else toast(`全部平倉指令已送審，結算日：${settlDate}`, 'warn');
+}
+
+// ========== METRICS ==========
+function calcNAV(grp) {
+  const g = state.groups[grp];
+  let mv = 0;
+  for (const p of g.positions) {
+    const s = state.securities[p.symbol];
+    if (s) mv += s.price * p.qty;
+  }
+  return g.cash + mv;
+}
+
+function calcDD(grp) {
+  const g = state.groups[grp];
+  const nav = calcNAV(grp);
+  if (nav > g.peakNAV) g.peakNAV = nav;
+  const dd = g.peakNAV > 0 ? (g.peakNAV - nav) / g.peakNAV * 100 : 0;
+  if (dd > g.maxDD) g.maxDD = dd;
+  return dd;
+}
+
+function calcSharpe(grp) {
+  const rets = state.groups[grp].returns;
+  if (rets.length < 2) return null;
+  const avg = rets.reduce((a,b) => a+b, 0) / rets.length;
+  const std = Math.sqrt(rets.reduce((s,r) => s + (r-avg)**2, 0) / rets.length);
+  return std > 0 ? (avg / std * Math.sqrt(252)).toFixed(2) : null;
+}
+
+function calcUtil(grp) {
+  const g = state.groups[grp];
+  const nav = calcNAV(grp);
+  let mv = 0;
+  for (const p of g.positions) {
+    const s = state.securities[p.symbol];
+    if (s) mv += s.price * p.qty;
+  }
+  return nav > 0 ? (mv / nav * 100).toFixed(1) : 0;
+}
+
+function updateAllMetrics() {
+  // Update risk panel metrics
+  for (const grp of ['etf', 'stock']) {
+    const g = state.groups[grp];
+    const dd = calcDD(grp);
+    const lim = grp === 'etf' ? state.limits.etf : state.limits.stk;
+    const ddPct = Math.min(dd / lim * 100, 100);
+    const prefix = grp === 'etf' ? 'etf' : 'stk';
+    const barCls = dd > lim * 0.8 ? 'danger' : dd > lim * 0.5 ? 'warn' : 'ok';
+
+    setText(`${prefix}-dd-label`, `${dd.toFixed(1)}% / ${lim}%`);
+    setText(`${prefix}-dd-val`, dd.toFixed(2) + '%', dd > lim * 0.8 ? 'var(--red)' : dd > lim * 0.5 ? 'var(--amber)' : 'var(--green)');
+    const bar = qs(`${prefix}-dd-bar`);
+    if (bar) { bar.style.width = ddPct + '%'; bar.className = `risk-bar-fill ${barCls}`; }
+    setText(`${prefix}-util`, calcUtil(grp) + '%');
+    const sh = calcSharpe(grp);
+    setText(`${prefix}-sharpe`, sh || '—', sh > 1 ? 'var(--green)' : sh > 0 ? 'var(--blue)' : sh != null ? 'var(--red)' : null);
+
+    // Freeze buttons
+    const unEl = qs(`unfreeze-${prefix}`);
+    if (unEl) unEl.style.display = g.frozen ? '' : 'none';
+
+    // Freeze banner on trade tab
+    const fb = qs(`freeze-${grp}`);
+    if (fb) fb.style.display = g.frozen ? 'flex' : 'none';
+
+
+  }
+
+  // Pending badge
+  // Tax summary
+  for (const grp of ['etf','stock']) {
+    const g = state.groups[grp];
+    const prefix = grp === 'etf' ? 'etf' : 'stk';
+    setText(`tax-${prefix}-amt`, money(g.totalTax));
+    const taxPct = g.totalTurnover > 0 ? (g.totalTax / g.totalTurnover * 100).toFixed(3) + '%' : '0.000%';
+    setText(`tax-${prefix}-pct`, taxPct);
+  }
+  setText('pending-badge', state.pendingApproval.length + ' 筆');
+  renderPendingList();
+  renderPositions();
+  renderRiskPositions();
+  renderViolations();
+  updateNavMini();
+}
+
+function updateNavMini() {
+  const grp = state.group;
+  const g = state.groups[grp];
+  const nav = calcNAV(grp);
+  const ret = (nav - INITIAL) / INITIAL * 100;
+  setText('nav-label', grp === 'etf' ? 'ETF 組 NAV' : '個股組 NAV');
+  setText('mini-nav', money(nav), ret >= 0 ? 'var(--green)' : 'var(--red)');
+  setText('mini-ret', pct(ret), ret >= 0 ? 'var(--green)' : 'var(--red)');
+  const mv = nav - g.cash;
+  setText('mini-cash', money(g.cash));
+}
+
+function renderPositions() {
+  const grp = state.group;
+  const g = state.groups[grp];
+  const nav = calcNAV(grp);
+  setText('pos-count', g.positions.length + ' 筆');
+  if (!g.positions.length) {
+    qs('positions-list').innerHTML = '<div class="empty-state">尚無持倉</div>';
+    return;
+  }
+  qs('positions-list').innerHTML = g.positions.map(p => {
+    const s = state.securities[p.symbol];
+    const cur = s ? s.price : p.avgPrice;
+    const pnl = (cur - p.avgPrice) * p.qty;
+    const pnlPct = (cur - p.avgPrice) / p.avgPrice * 100;
+    const mv = cur * p.qty;
+    const wt = nav > 0 ? (mv / nav * 100).toFixed(1) : 0;
+    const cl = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+    return `<div class="pos-item">
+      <div class="pos-top">
+        <div>
+          <div class="pos-sym">${p.symbol.replace('.TW','')} <span style="font-size:12px;color:var(--text2);font-family:var(--sans)">${s?s.name:''}</span></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">持有 ${p.qty} 股 · 均價 ${p.avgPrice.toFixed(p.avgPrice<100?2:0)}</div>
+        </div>
+        <div class="pos-pnl" style="color:${cl}">
+          ${pnl>=0?'+':''}${pnl.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',')}
+          <div style="font-size:11px">${pct(pnlPct)}</div>
+        </div>
+      </div>
+      <div class="pos-detail">
+        <div class="pos-detail-item">現價 <span>${cur.toFixed(cur<100?2:0)}</span></div>
+        <div class="pos-detail-item">倉位佔比 <span>${wt}%</span></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn btn-sm" style="flex:1" onclick="prefillClose('${p.symbol}',${p.qty})">部分平倉</button>
+        <button class="btn btn-sm btn-danger" style="flex:1" onclick="fullClose('${p.symbol}',${p.qty})">全部平倉</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderPendingList() {
+  const now = getTWNTime();
+  const isAfter = checkAfterClose();
+  const today = now.toISOString().slice(0,10);
+
+  // Show settle button if there are approved orders whose settlement_date <= today and after 13:30
+  const settleable = state.approvedPending.filter(o => o.settlement_date <= today);
+  const settleBtn = qs('settle-btn');
+  if (settleBtn) settleBtn.style.display = (isAfter && settleable.length) ? '' : 'none';
+
+  let html = '';
+
+  // Section A: pending review
+  if (state.pendingApproval.length) {
+    html += `<div class="settle-section-hdr">待審核</div>`;
+    html += state.pendingApproval.map(o => {
+      const sd = o.settlement_date || '—';
+      return `<div class="order-item">
+        <div class="order-top">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span class="order-sym">${o.symbol.replace('.TW','')}</span>
+              <span class="badge badge-${o.side}">${o.side==='buy'?'買':'賣'}</span>
+              <span class="badge badge-${o.group}">${o.group==='etf'?'ETF':'個股'}</span>
+            </div>
+            <div class="order-meta">${o.qty} 股 · 計分 ${o.scorecard.total}/25 · 送出 ${o.time}</div>
+            <div class="order-meta" style="color:var(--blue)">結算日：${sd}</div>
+          </div>
+          <div>
+            <div class="order-amount">${money(o.amount)}</div>
+            <button class="btn btn-sm btn-primary" style="margin-top:6px;width:100%" onclick="openReview('${o.id}')">審核</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Section B: approved, awaiting settlement
+  if (state.approvedPending.length) {
+    html += `<div class="settle-section-hdr" style="margin-top:4px">已核准 — 等待收盤結算</div>`;
+    html += state.approvedPending.map(o => {
+      const sd = o.settlement_date || '—';
+      const locked = isAfter && sd <= today;
+      return `<div class="order-item">
+        <div class="order-top">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span class="order-sym">${o.symbol.replace('.TW','')}</span>
+              <span class="badge badge-${o.side}">${o.side==='buy'?'買':'賣'}</span>
+              <span class="badge badge-approved">已核准</span>
+              ${locked ? '<span class="badge" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)">🔒 已鎖定</span>' : ''}
+            </div>
+            <div class="order-meta">${o.qty} 股 · 結算日：${sd}</div>
+            <div class="order-meta" style="color:var(--amber)">${locked ? '收盤後不可取消，等待結算' : '可於 13:30 前取消'}</div>
+          </div>
+          <div>
+            <div class="order-amount">${money(o.amount)}</div>
+            ${!locked ? `<button class="btn btn-sm btn-danger" style="margin-top:6px;width:100%" onclick="cancelApproved('${o.id}')">取消</button>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  if (!html) html = '<div class="empty-state">目前無待審訂單</div>';
+  qs('pending-list').innerHTML = html;
+}
+
+// ========== RISK ACTIONS ==========
+function unfreezeGroup(grp) {
+  state.groups[grp].frozen = false;
+  toast(`${state.groups[grp].name} 已解除凍結`, 'success');
+  updateAllMetrics();
+}
+
+
+
+function settleNAV() {
+  for (const grp of ['etf','stock']) {
+    const nav = calcNAV(grp);
+    state.groups[grp].navHistory.push({ t: Date.now(), nav });
+  }
+  toast('NAV 結算已記錄', 'success');
+  renderNavChart();
+}
+
+function updateLimits() {
+  state.limits.etf = parseFloat(qs('etf-dd-limit').value) || 10;
+  state.limits.stk = parseFloat(qs('stk-dd-limit').value) || 10;
+  updateAllMetrics();
+}
+
+async function resetAll() {
+  if (!confirm('確定重置所有資料？Supabase 上的訂單紀錄也會一併刪除，此操作無法復原。')) return;
+  await clearOrdersFromDB();
+  toast('沙盒已重置，重新開始', 'info');
+  updateAllMetrics(); renderNavChart(); renderHistory();
+}
+
+// ========== NAV CHART ==========
+let navChart = null;
+function renderNavChart() {
+  const el = qs('nav-chart'); if (!el) return;
+  const eH = state.groups.etf.navHistory;
+  const sH = state.groups.stock.navHistory;
+  const maxL = Math.max(eH.length, sH.length, 2);
+  const labels = Array.from({length:maxL}, (_,i) => i===0?'開始':'D'+i);
+  const eData = eH.map(h => Math.round(h.nav));
+  const sData = sH.map(h => Math.round(h.nav));
+  while(eData.length < maxL) eData.push(eData[eData.length-1]);
+  while(sData.length < maxL) sData.push(sData[sData.length-1]);
+  if (navChart) navChart.destroy();
+  navChart = new Chart(el, {
+    type: 'line',
+    data: { labels, datasets: [
+      { label:'ETF', data:eData, borderColor:'#2dd4bf', backgroundColor:'rgba(45,212,191,.07)', borderWidth:2, pointRadius:2, tension:.35, fill:true },
+      { label:'個股', data:sData, borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,.07)', borderWidth:2, pointRadius:2, tension:.35, fill:true }
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color:'#8892a4', font:{size:11}, boxWidth:12 } } },
+      scales: {
+        x: { grid:{color:'rgba(255,255,255,.04)'}, ticks:{color:'#4a5568',font:{size:10}} },
+        y: { grid:{color:'rgba(255,255,255,.04)'}, ticks:{color:'#4a5568',font:{size:10}, callback: v=>'$'+Math.round(v/1000000)+'M'} }
+      }
+    }
+  });
+}
+
+// ========== HISTORY ==========
+function setHistGroup(grp) {
+  state.histGroup = grp;
+  qs('hist-etf').className = 'group-btn' + (grp==='etf' ? ' etf-active' : '');
+  qs('hist-stk').className = 'group-btn' + (grp==='stock' ? ' stk-active' : '');
+  renderHistory();
+}
+
+function renderHistory() {
+  const grp = state.histGroup;
+  const g = state.groups[grp];
+  const nav = calcNAV(grp);
+  const ret = (nav - INITIAL) / INITIAL * 100;
+  const orders = state.orders.filter(o => o.group === grp);
+  const execOrders = orders.filter(o => o.status === 'executed');
+  const avgSc = execOrders.length ? (execOrders.reduce((s,o) => s+(o.scorecard.total||0), 0) / execOrders.length).toFixed(1) : '—';
+
+  setText('hist-ret', pct(ret), ret >= 0 ? 'var(--green)' : 'var(--red)');
+  setText('hist-trades', `${g.tradeCount} 筆成交`);
+  setText('hist-avg-sc', avgSc);
+
+  // Order list
+  if (!orders.length) {
+    qs('order-history-list').innerHTML = '<div class="empty-state">尚無訂單</div>';
+    return;
+  }
+  qs('order-history-list').innerHTML = [...orders].reverse().map(o => `
+    <div class="order-item">
+      <div class="order-top">
+        <div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="order-sym">${o.symbol.replace('.TW','')}</span>
+            <span class="badge badge-${o.side}">${o.side==='buy'?'買入':'賣出'}</span>
+            <span class="badge ${o.status==='approved'?'badge-approved':o.status==='executed'?'badge-executed':o.status==='rejected'?'badge-rejected':'badge-pending'}">${{pending:'待審',approved:'待結算',executed:'成交',rejected:'駁回'}[o.status]||o.status}</span>
+          </div>
+          <div class="order-meta">${o.qty} 股 · 計分 ${o.scorecard.total}/25 · ${o.time}</div>
+          ${o.comment ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">💬 ${o.comment}</div>` : ''}
+        </div>
+        <div class="order-amount">${money(o.amount)}</div>
+      </div>
+    </div>`).join('');
+}
+
+
+// ========== CHART MODAL ==========
+let lwChart = null;
+let chartSeries = null;
+let currentChartSym = null;
+let currentTf = '1W';
+const chartCache = {};   // key: sym+tf → [{time,open,high,low,close}]
+const ALL_TF = ['1W','1M','3M','6M','1Y','3Y'];
+
+// TF → Yahoo Finance range/interval params
+const TF_PARAMS = {
+  '1W': { range: '5d',  interval: '1d'  },
+  '1M': { range: '1mo', interval: '1d'  },
+  '3M': { range: '3mo', interval: '1d'  },
+  '6M': { range: '6mo', interval: '1d'  },
+  '1Y': { range: '1y',  interval: '1wk' },
+  '3Y': { range: '3y',  interval: '1wk' },
+};
+
+// Fallback seeded simulation (used when API fails)
+function seededRand(seed) {
+  let s = seed;
+  return function() {
+    s = Math.imul(48271, s) | 0;
+    return (s & 0x7fffffff) / 0x7fffffff;
+  };
+}
+function strToSeed(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  return Math.abs(h) || 1;
+}
+function generateCandles(sym, tf) {
+  const s = state.securities[sym];
+  if (!s) return [];
+  const dayMap = { '1W':7,'1M':30,'3M':90,'6M':180,'1Y':365,'3Y':1095 };
+  const days = dayMap[tf] || 30;
+  const rand = seededRand(strToSeed(sym + tf));
+  const dailyVol = (s.vol || 0.2) / Math.sqrt(252);
+  let price = s.price;
+  for (let i = 0; i < days; i++) price /= (1 + (rand() - 0.5) * dailyVol * 2);
+  const data = [];
+  const rand2 = seededRand(strToSeed(sym + tf));
+  for (let i = days; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+    const move = (rand2() - 0.48) * dailyVol * 2;
+    const open = price, close = price * (1 + move);
+    const high = Math.max(open, close) * (1 + rand2() * dailyVol * 0.5);
+    const low  = Math.min(open, close) * (1 - rand2() * dailyVol * 0.5);
+    data.push({ time: d.toISOString().slice(0,10), open, high, low, close });
+    price = close;
+  }
+  if (data.length) {
+    const last = data[data.length - 1];
+    last.close = s.price;
+    last.high  = Math.max(last.high, s.price);
+    last.low   = Math.min(last.low,  s.price);
+  }
+  return data;
+}
+
+// Fetch real OHLC from Yahoo Finance via Supabase Edge Function
+async function fetchRealCandles(sym, tf) {
+  const cacheKey = sym + '_' + tf;
+  if (chartCache[cacheKey]) return chartCache[cacheKey];
+
+  const { range, interval } = TF_PARAMS[tf] || TF_PARAMS['1M'];
+  try {
+    const { data, error } = await db.functions.invoke('history-function', {
+      body: { symbol: sym, range, interval }
+    });
+    if (error || !data?.candles?.length) throw new Error('no data');
+    chartCache[cacheKey] = data.candles;
+    return data.candles;
+  } catch(e) {
+    console.warn('history-function failed, using simulated data:', e.message);
+    return null; // will fall back to simulation
+  }
+}
+
+function showChartLoading(show) {
+  const el = qs('chart-loading');
+  if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+function openChartModal(sym) {
+  currentChartSym = sym;
+  currentTf = '1W';
+  const s = state.securities[sym];
+  if (!s) return;
+
+  qs('chart-sym-name').textContent = sym.replace('.TW','') + '  ' + s.name;
+  qs('chart-sym-sub').textContent = s.grp === 'etf' ? 'ETF · 交易稅 0.1%' : '個股 · 交易稅 0.3%';
+  const clr = (s.changeRate ?? 0) >= 0 ? 'var(--green)' : 'var(--red)';
+  const sign = (s.changeRate ?? 0) >= 0 ? '▲' : '▼';
+  qs('chart-cur-price').textContent = s.price.toFixed(s.price < 100 ? 2 : 0);
+  qs('chart-cur-price').style.color = clr;
+  qs('chart-cur-chg').textContent = sign + ' ' + Math.abs(s.changeRate ?? 0).toFixed(2) + '%';
+  qs('chart-cur-chg').style.color = clr;
+
+  ALL_TF.forEach(tf => {
+    const el = qs('tf-' + tf);
+    if (el) el.className = 'tf-btn' + (tf === currentTf ? ' active' : '');
+  });
+
+  qs('modal-chart').classList.add('open');
+  setTimeout(() => buildChart(sym, currentTf), 60);
+}
+
+async function buildChart(sym, tf) {
+  const container = qs('chart-container');
+  if (!container) return;
+
+  showChartLoading(true);
+
+  // Destroy previous chart instance
+  if (lwChart) { lwChart.remove(); lwChart = null; chartSeries = null; }
+
+  // Create chart
+  lwChart = LightweightCharts.createChart(container, {
+    width:  container.clientWidth,
+    height: container.clientHeight,
+    layout: { background: { color: '#12151c' }, textColor: '#8892a4' },
+    grid: {
+      vertLines: { color: 'rgba(255,255,255,0.04)' },
+      horzLines: { color: 'rgba(255,255,255,0.04)' },
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,0.08)' },
+    timeScale: { borderColor: 'rgba(255,255,255,0.08)', timeVisible: true },
+  });
+
+  chartSeries = lwChart.addCandlestickSeries({
+    upColor: '#34d399', downColor: '#f87171',
+    borderUpColor: '#34d399', borderDownColor: '#f87171',
+    wickUpColor: '#34d399', wickDownColor: '#f87171',
+  });
+
+  // Try real data, fall back to simulation
+  let data = await fetchRealCandles(sym, tf);
+  if (!data || !data.length) {
+    data = generateCandles(sym, tf);
+    // Show a hint that it's simulated
+    toast('使用模擬歷史數據（Yahoo Finance 暫時無法取得）', 'warn');
+  }
+
+  chartSeries.setData(data);
+  lwChart.timeScale().fitContent();
+  showChartLoading(false);
+}
+
+function setTf(tf) {
+  currentTf = tf;
+  ALL_TF.forEach(t => {
+    const el = qs('tf-' + t);
+    if (el) el.className = 'tf-btn' + (t === tf ? ' active' : '');
+  });
+  if (currentChartSym) buildChart(currentChartSym, tf);
+}
+
+function closeChartModal() {
+  qs('modal-chart').classList.remove('open');
+  if (lwChart) { lwChart.remove(); lwChart = null; chartSeries = null; }
+}
+
+function selectFromChart() {
+  if (!currentChartSym) return;
+  closeChartModal();
+  const sym = currentChartSym;
+  const s = state.securities[sym];
+  if (!s) return;
+  if (s.grp !== state.group) setGroup(s.grp);
+  setTimeout(() => {
+    const sel = qs('order-symbol');
+    if (sel && [...sel.options].some(o => o.value === sym)) {
+      sel.value = sym; updateOrderPrice();
+    }
+    qs('order-symbol').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
+}
+
+// ========== TRADING PERIOD ==========
+const period = { start: null, end: null };
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function onPeriodChange() {
+  const s = qs('period-start').value;
+  const e = qs('period-end').value;
+  if (s && e && e <= s) {
+    qs('period-end').value = '';
+    toast('結束日期必須晚於開始日期', 'warn');
+  }
+}
+
+function setPeriod() {
+  const s = qs('period-start').value;
+  const e = qs('period-end').value;
+  if (!s || !e) { toast('請同時選擇開始與結束日期', 'warn'); return; }
+  if (e <= s) { toast('結束日期必須晚於開始日期', 'warn'); return; }
+  period.start = new Date(s + 'T00:00:00');
+  period.end   = new Date(e + 'T23:59:59');
+  updatePeriodUI();
+  toast('交易期間已設定', 'success');
+}
+
+function clearPeriod() {
+  period.start = null; period.end = null;
+  qs('period-start').value = '';
+  qs('period-end').value = '';
+  updatePeriodUI();
+}
+
+function updatePeriodUI() {
+  const dot     = qs('period-dot');
+  const label   = qs('period-status-label');
+  const sub     = qs('period-status-sub');
+  const cdEl    = qs('period-countdown');
+  const expArea = qs('export-area');
+  const expHint = qs('export-hint');
+
+  if (!period.start || !period.end) {
+    dot.className = 'period-dot not-set';
+    label.textContent = '尚未設定交易期間';
+    sub.textContent = '請選擇開始與結束日期';
+    cdEl.textContent = '';
+    expArea.style.display = 'none';
+    return;
+  }
+
+  const now = new Date();
+  const fmtDate = d => d.toLocaleDateString('zh-TW', {month:'2-digit', day:'2-digit'});
+
+  if (now < period.start) {
+    dot.className = 'period-dot not-set';
+    label.textContent = '交易期間尚未開始';
+    sub.textContent = fmtDate(period.start) + ' → ' + fmtDate(period.end);
+    const daysLeft = Math.ceil((period.start - now) / 86400000);
+    cdEl.textContent = daysLeft + ' 天後開始';
+    cdEl.style.color = 'var(--text3)';
+    expArea.style.display = 'none';
+  } else if (now <= period.end) {
+    dot.className = 'period-dot active';
+    label.textContent = '交易期間進行中';
+    sub.textContent = fmtDate(period.start) + ' → ' + fmtDate(period.end);
+    const msLeft = period.end - now;
+    const dLeft  = Math.floor(msLeft / 86400000);
+    const hLeft  = Math.floor((msLeft % 86400000) / 3600000);
+    cdEl.textContent = dLeft > 0 ? ('剩 ' + dLeft + ' 天') : ('剩 ' + hLeft + ' 時');
+    cdEl.style.color = dLeft <= 1 ? 'var(--red)' : 'var(--teal)';
+    expArea.style.display = 'block';
+    expHint.textContent = '期間進行中，可隨時預覽匯出';
+    const endBtn = qs('end-period-btn');
+    if (endBtn) endBtn.style.display = 'none';
+  } else {
+    dot.className = 'period-dot ended';
+    label.textContent = '⏹ 交易期間已結束';
+    sub.textContent = fmtDate(period.start) + ' → ' + fmtDate(period.end);
+    cdEl.textContent = '已結束';
+    cdEl.style.color = 'var(--amber)';
+    expArea.style.display = 'block';
+    expHint.textContent = '交易期間已結束，請先匯出 CSV 再清除紀錄';
+    const endBtn = qs('end-period-btn');
+    if (endBtn) endBtn.style.display = '';
+  }
+}
+
+setInterval(updatePeriodUI, 60000);
+
+// ========== EXPORT ==========
+function exportReport() {
+  const allOrders = state.orders.filter(o => o.status === 'executed');
+  const rows = [];
+
+  const periodLabel = period.start && period.end
+    ? (period.start.toLocaleDateString('zh-TW') + ' ～ ' + period.end.toLocaleDateString('zh-TW'))
+    : '未設定';
+
+  rows.push(['=== SimTrade 模擬交易績效報告 ===']);
+  rows.push(['交易期間', periodLabel]);
+  rows.push(['報告產出時間', new Date().toLocaleString('zh-TW')]);
+  rows.push([]);
+
+  // Section 1: Summary
+  rows.push(['=== 一、績效摘要 ===']);
+  rows.push(['組別','期末NAV','初始資金','累計損益','累計報酬率','最大回撤','成交筆數','計分卡均分']);
+  for (const grp of ['etf', 'stock']) {
+    const g = state.groups[grp];
+    const nav = calcNAV(grp);
+    const ret = nav - INITIAL;
+    const retPct = (ret / INITIAL * 100).toFixed(2) + '%';
+    const gOrders = allOrders.filter(o => o.group === grp);
+    const avgSc = gOrders.length
+      ? (gOrders.reduce((s, o) => s + (o.scorecard.total || 0), 0) / gOrders.length).toFixed(1)
+      : '—';
+    rows.push([g.name, Math.round(nav), INITIAL, Math.round(ret), retPct, g.maxDD.toFixed(2)+'%', g.tradeCount, avgSc]);
+  }
+  rows.push([]);
+
+  // Section 2: Trade detail
+  rows.push(['=== 二、交易明細（已成交） ===']);
+  rows.push(['下單時間','組別','商品代號','商品名稱','方向','數量(股)','成交參考價','成交金額','計分卡分數','計畫書摘要']);
+  const sorted = [...allOrders].sort((a,b) => a.time.localeCompare(b.time));
+  for (const o of sorted) {
+    const reasons = [1,2,3,4,5].map(i => 'Q'+i+':'+(o.scorecard.reasons && o.scorecard.reasons[i] ? o.scorecard.reasons[i] : '')).join(' | ');
+    rows.push([
+      o.time,
+      o.group === 'etf' ? 'ETF組' : '個股組',
+      o.symbol, o.name,
+      o.side === 'buy' ? '買入' : '賣出',
+      o.qty, o.price, o.settlement_date||'—', o.settlement_price||'—', Math.round(o.amount),
+      (o.tax || 0),
+      o.scorecard.total + '/25',
+      '"' + reasons.replace(/"/g, '""') + '"'
+    ]);
+  }
+  if (!sorted.length) rows.push(['（無成交紀錄）']);
+  rows.push([]);
+
+  // Section 3: Positions
+  rows.push(['=== 三、期末持倉（參考） ===']);
+  rows.push(['組別','商品代號','商品名稱','持有數量','成本均價','現值參考','未實現損益']);
+  for (const grp of ['etf', 'stock']) {
+    const g = state.groups[grp];
+    if (!g.positions.length) { rows.push([g.name, '（無持倉）']); continue; }
+    for (const p of g.positions) {
+      const s = state.securities[p.symbol];
+      const cur = s ? s.price : p.avgPrice;
+      const pnl = (cur - p.avgPrice) * p.qty;
+      rows.push([g.name, p.symbol, s ? s.name : '', p.qty, p.avgPrice.toFixed(2), (cur*p.qty).toFixed(0), pnl.toFixed(0)]);
+    }
+  }
+  rows.push([]);
+
+  // Section 4: Risk
+  rows.push(['=== 四、風控紀錄 ===']);
+  rows.push(['組別','最大回撤','回撤上限','是否超限','目前狀態']);
+  for (const grp of ['etf', 'stock']) {
+    const g = state.groups[grp];
+    const lim = grp === 'etf' ? state.limits.etf : state.limits.stk;
+    rows.push([g.name, g.maxDD.toFixed(2)+'%', lim+'%', g.maxDD > lim ? '是' : '否', g.frozen ? '凍結中' : '正常']);
+  }
+
+  const csv = '\uFEFF' + rows.map(r => Array.isArray(r) ? r.join(',') : r).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = 'SimTrade_報告_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV 已匯出', 'success');
+}
+
+// ========== LOAD ORDERS FROM DB ==========
+// Silently replay an executed order to rebuild positions/cash (no toasts)
+function replayOrder(order) {
+  const g = state.groups[order.group];
+  if (!g) return;
+  const cost = order.price * order.qty;
+  const taxRate = state.securities[order.symbol]?.grp === 'etf' ? 0.001 : 0.003;
+  const tax = order.side === 'sell' ? Math.round(cost * taxRate) : 0;
+  order.tax = tax;
+  g.totalTax += tax;
+  if (order.side === 'sell') g.totalTurnover += cost;
+  if (order.side === 'buy') {
+    g.cash -= cost;
+    const ex = g.positions.find(p => p.symbol === order.symbol);
+    if (ex) { ex.avgPrice = (ex.avgPrice * ex.qty + cost) / (ex.qty + order.qty); ex.qty += order.qty; }
+    else g.positions.push({ symbol: order.symbol, qty: order.qty, avgPrice: execPrice });
+  } else {
+    const pos = g.positions.find(p => p.symbol === order.symbol);
+    if (pos) {
+      g.cash += (cost - tax);
+      pos.qty -= order.qty;
+      if (pos.qty === 0) g.positions = g.positions.filter(p => p.symbol !== order.symbol);
+    }
+  }
+  g.tradeCount++;
+  const nav = calcNAV(order.group);
+  const prev = g.navHistory.length ? g.navHistory[g.navHistory.length-1].nav : INITIAL;
+  g.returns.push((nav - prev) / prev * 100);
+  g.navHistory.push({ t: Date.now(), nav });
+}
+
+async function loadOrdersFromDB() {
+  const { data, error } = await db.from('orders').select('*').order('created_at', { ascending: true });
+  if (error || !data) return;
+  // Reset group state before replay
+  state.groups.etf   = mkGroup('ETF 組');
+  state.groups.stock = mkGroup('個股組');
+  state.orders = [];
+  state.pendingApproval = [];
+  for (const o of data) {
+    const order = {
+      id: o.id, time: o.time, symbol: o.symbol, name: o.name,
+      qty: +o.qty, side: o.side, price: +o.price, amount: +o.amount,
+      group: o.grp, status: o.status, comment: o.comment,
+      scorecard: o.scorecard
+    };
+    state.orders.push(order);
+    if (order.status === 'pending') {
+      state.pendingApproval.push(order);
+    } else if (order.status === 'approved') {
+      state.approvedPending.push(order);
+    } else if (order.status === 'executed') {
+      replayOrder(order);
+    }
+  }
+}
+
+async function clearOrdersFromDB() {
+  // Delete all rows — requires delete policy on orders table
+  await db.from('orders').delete().neq('id', '___none___');
+  // Reset in-memory state
+  state.groups.etf   = mkGroup('ETF 組');
+  state.groups.stock = mkGroup('個股組');
+  state.orders = [];
+  state.pendingApproval = [];
+  state.approvedPending = [];
+}
+
+async function endPeriodAndClear() {
+  if (!confirm('確定結束交易期間並清除所有紀錄？\n建議先匯出 CSV 再執行此操作。')) return;
+  await clearOrdersFromDB();
+  clearPeriod();
+  toast('交易期間已結束，紀錄已清除', 'info');
+  updateAllMetrics(); renderNavChart(); renderHistory();
+}
+
+// ========== INIT ==========
+async function init() {
+  // Set default dates: today → +7 days
+  const today = new Date().toISOString().slice(0,10);
+  const next7 = new Date(Date.now() + 7*86400000).toISOString().slice(0,10);
+  if (qs('period-start')) qs('period-start').value = today;
+  if (qs('period-end'))   qs('period-end').value   = next7;
+
+  updateMarketStatusBanner();
+  setupRealtime();
+  await fetchInitialPrices();   // must load prices first (needed for tax rate in replayOrder)
+  await loadOrdersFromDB();     // then replay orders to rebuild state
+  updateAllMetrics();
+  renderNavChart();
+  await triggerPriceUpdate();
+  setInterval(triggerPriceUpdate, 10000);
+}
+
+init();
+</script>
+</body>
+</html>
